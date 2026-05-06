@@ -43,7 +43,28 @@ ansible-playbook autoware.dev_env.install_docker -K
 
 Más info: [Documentación de instalación de Autoware con Docker](https://autowarefoundation.github.io/autoware-documentation/main/installation/autoware/docker-installation/)
 
-### 2. Descargar y ejecutar el contenedor
+### 2. Descargar los datos de planificación
+
+Descargar el mapa `sample-map-planning` y los modelos ML en `~/autoware_data`:
+
+```bash
+mkdir ~/autoware_data
+cd ~/autoware_data
+mkdir maps ml_models
+ansible-playbook autoware.dev_env.install_dev_env --tags demo_artifacts --ask-become-pass
+ansible-playbook autoware.dev_env.install_dev_env --tags ml_models --ask-become-pass
+```
+
+El script deja los datos en:
+
+```text
+~/autoware_data/maps/sample-map-planning/
+~/autoware_data/ml_models/
+```
+
+Más info: [Documentación de planning simulation](https://autowarefoundation.github.io/autoware-documentation/main/demos/planning-sim/)
+
+### 3. Descargar y ejecutar el contenedor
 
 Descargar la imagen de Autoware v1.8.0 para ROS2 Humble:
 
@@ -54,7 +75,7 @@ docker pull ghcr.io/autowarefoundation/autoware:universe-cuda-humble-1.8.0
 Ejecutar el contenedor:
 
 ```bash
-./docker/run_docker.sh
+./tools/run_docker.sh
 ```
 
 Probar el simulador de planificación de Autoware:
@@ -63,3 +84,24 @@ Probar el simulador de planificación de Autoware:
 source ~/autoware/install/setup.bash
 ros2 launch autoware_launch planning_simulator.launch.xml map_path:=$HOME/autoware_data/maps/sample-map-planning vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit
 ```
+
+## AWSIM
+
+AWSIM permite ejecutar una simulación fotorrealista conectada con Autoware. Requiere una GPU NVIDIA RTX y drivers NVIDIA compatibles. Descargar AWSIM Demo y el mapa de Shinjuku en [AWSIM Quick Start Demo](https://tier4.github.io/AWSIM/GettingStarted/QuickStartDemo/).
+
+Ejecutar AWSIM desde el host haciendo doble click en `AWSIM-Demo.x86_64`.
+
+En un terminal, ejecutar el contenedor de Autoware:
+
+```bash
+./tools/run_docker.sh
+```
+
+Lanzar Autoware conectado a AWSIM dentro del contenedor:
+
+```bash
+source ~/autoware/install/setup.bash
+ros2 launch autoware_launch e2e_simulator.launch.xml vehicle_model:=sample_vehicle sensor_model:=awsim_sensor_kit map_path:=$HOME/autoware_data/maps/Shinjuku-Map
+```
+
+Más info: [AWSIM Quick Start Demo](https://tier4.github.io/AWSIM/GettingStarted/QuickStartDemo/)
