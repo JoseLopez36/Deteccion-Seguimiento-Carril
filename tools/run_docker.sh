@@ -15,7 +15,8 @@ docker run --rm -it \
   -v $HOME/autoware_data/maps:/home/aw/autoware_data/maps \
   -v $HOME/autoware_data/ml_models:/home/aw/autoware_data/ml_models \
   -v $HOME/autoware:/home/aw/autoware \
-  -w /home/aw/autoware \
+  -v $PWD:/home/aw/workspace \
+  -w /home/aw/workspace \
   --runtime=nvidia \
-  ghcr.io/autowarefoundation/autoware:universe-cuda-humble-1.8.0 \
+  ghcr.io/autowarefoundation/autoware:universe-cuda-jazzy \
   bash -c "source /opt/autoware/setup.bash && exec bash"

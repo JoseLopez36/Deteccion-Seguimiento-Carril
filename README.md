@@ -21,7 +21,7 @@ El flujo previsto es:
 - Rafael Muñoz
 - José Francisco López
 
-## Puesta en marcha
+## Instalación
 
 ### 1. Preparar Autoware en el host
 
@@ -84,7 +84,7 @@ source ~/autoware/install/setup.bash
 ros2 launch autoware_launch planning_simulator.launch.xml map_path:=$HOME/autoware_data/maps/sample-map-planning vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit
 ```
 
-## AWSIM
+### 4. Instalar y ejecutar AWSIM
 
 AWSIM permite ejecutar una simulación fotorrealista conectada con Autoware. Requiere una GPU NVIDIA RTX y drivers NVIDIA compatibles. Descargar AWSIM Demo y el mapa de Shinjuku en [AWSIM Quick Start Demo](https://tier4.github.io/AWSIM/GettingStarted/QuickStartDemo/).
 
@@ -104,3 +104,29 @@ HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm awsim
 ```
 
 Más info: [AWSIM Quick Start Demo](https://tier4.github.io/AWSIM/GettingStarted/QuickStartDemo/)
+
+## Puesta en marcha
+
+Compilar el paquete ROS2 dentro del contenedor de desarrollo:
+
+```bash
+./tools/run_docker.sh
+```
+
+```bash
+cd /home/aw/workspace
+rm -rf build/deteccion_seguimiento_carril install/deteccion_seguimiento_carril log
+colcon build --symlink-install --packages-select deteccion_seguimiento_carril
+source install/setup.bash
+```
+
+Con AWSIM ya ejecutándose, lanzar el sistema de seguimiento de carril usando Docker Compose:
+
+```bash
+cd tools/
+HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm deteccion_seguimiento_carril
+```
+
+El servicio `deteccion_seguimiento_carril` de `tools/docker-compose.yaml` monta el workspace, activa `/opt/autoware/setup.bash`, activa `install/setup.bash` y ejecuta `ros2 launch deteccion_seguimiento_carril run.launch.py`.
+
+El nodo se suscribe a la cámara de AWSIM en `/sensing/camera/traffic_light/image_raw` y publica comandos de control en `/control/command/control_cmd`.
