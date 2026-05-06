@@ -4,7 +4,7 @@ Repositorio para el trabajo de la asignatura **Control en Vehículos** del **MIE
 
 ## Idea del proyecto
 
-El objetivo es simular un sistema de detección y mantenimiento de carril utilizando cámaras virtuales sobre un vehículo simulado en ROS2 Humble y Gazebo.
+El objetivo es simular un sistema de detección y mantenimiento de carril utilizando cámaras virtuales sobre un vehículo simulado en ROS2 Jazzy y Gazebo.
 
 El flujo previsto es:
 
@@ -25,12 +25,11 @@ El flujo previsto es:
 
 ### 1. Preparar Autoware en el host
 
-Clonar Autoware v1.8.0:
+Clonar Autoware:
 
 ```bash
 git clone https://github.com/autowarefoundation/autoware.git ~/autoware
 cd ~/autoware
-git checkout 1.8.0
 ```
 
 Preparar las herramientas de instalación del Docker de Autoware:
@@ -66,10 +65,10 @@ Más info: [Documentación de planning simulation](https://autowarefoundation.gi
 
 ### 3. Descargar y ejecutar el contenedor
 
-Descargar la imagen de Autoware v1.8.0 para ROS2 Humble:
+Descargar la imagen de Autoware para ROS2 Jazzy:
 
 ```bash
-docker pull ghcr.io/autowarefoundation/autoware:universe-cuda-humble-1.8.0
+docker pull ghcr.io/autowarefoundation/autoware:universe-cuda-jazzy
 ```
 
 Ejecutar el contenedor:
@@ -92,7 +91,7 @@ AWSIM permite ejecutar una simulación fotorrealista conectada con Autoware. Req
 Ejecutar AWSIM desde el host:
 
 ```bash
-./AWSIM-Demo.x86_64
+./AWSIM-demo.x86_64 --json_path AWSIM-config.json
 ```
 
 Lanzar Autoware conectado a AWSIM:
