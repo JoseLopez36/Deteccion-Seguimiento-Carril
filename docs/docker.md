@@ -18,7 +18,6 @@ Para este proyecto se usa `core-humble`.
 
 - Ubuntu 22.04.
 - Docker instalado.
-- Docker Compose disponible.
 - Acceso a servidor gráfico X11 si se usa Gazebo/RViz.
 - Driver NVIDIA y NVIDIA Container Toolkit si se quiere aceleración GPU.
 
@@ -30,16 +29,10 @@ docker pull ghcr.io/autowarefoundation/autoware:core-humble
 
 ## Entrar en el contenedor
 
-Permitir acceso X11 al contenedor:
-
-```bash
-xhost +local:docker
-```
-
 Arrancar una shell dentro del contenedor:
 
 ```bash
-docker compose run --rm autoware-core
+./run_docker.sh
 ```
 
 El repositorio local queda montado dentro del contenedor en:
@@ -51,13 +44,14 @@ El repositorio local queda montado dentro del contenedor en:
 ## Compilar dentro del contenedor
 
 ```bash
-./scripts/docker_build.sh
+colcon build --symlink-install
+source install/setup.bash
 ```
 
 ## Lanzar simulación dentro del contenedor
 
 ```bash
-./scripts/docker_sim.sh
+ros2 launch deteccion_seguimiento_carril_sim sim.launch.py
 ```
 
 ## Referencias

@@ -39,28 +39,28 @@ Descargar la imagen oficial de Autoware Core para ROS2 Humble:
 docker pull ghcr.io/autowarefoundation/autoware:core-humble
 ```
 
-Permitir acceso gráfico desde el contenedor:
-
-```bash
-xhost +local:docker
-```
-
 Entrar en el contenedor:
 
 ```bash
-docker compose run --rm autoware-core
+./run_docker.sh
 ```
 
 Compilar el workspace ROS2 dentro del contenedor:
 
 ```bash
-./scripts/docker_build.sh
+colcon build --symlink-install
+```
+
+Realizar el source del workspace:
+
+```bash
+source install/setup.bash
 ```
 
 Lanzar la simulación base dentro del contenedor:
 
 ```bash
-./scripts/docker_sim.sh
+ros2 launch deteccion_seguimiento_carril_sim sim.launch.py
 ```
 
 Más detalles en `docs/docker.md`.

@@ -19,16 +19,10 @@ Descargar la imagen de Autoware Core para ROS2 Humble:
 docker pull ghcr.io/autowarefoundation/autoware:core-humble
 ```
 
-Permitir acceso gráfico desde el contenedor:
-
-```bash
-xhost +local:docker
-```
-
 Entrar en el contenedor:
 
 ```bash
-docker compose run --rm autoware-core
+./scripts/run_docker.sh
 ```
 
 Compilar dentro del contenedor:
