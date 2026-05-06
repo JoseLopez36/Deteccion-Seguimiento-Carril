@@ -1,6 +1,6 @@
 # Detección de cambio de carril y seguimiento
 
-Repositorio para el trabajo de la asignatura **Control en Vehículos** del máster **MIERA** de la **Universidad de Sevilla**.
+Repositorio para el trabajo de la asignatura **Control en Vehículos** del **MIERA** de la **Universidad de Sevilla**.
 
 ## Idea del proyecto
 
@@ -24,41 +24,43 @@ El flujo previsto es:
 ## Stack técnico
 
 - Ubuntu 22.04
-- ROS2 Humble
+- Docker
+- Autoware Core para ROS2 Humble
 - Gazebo
-- Pixi
 - Python
 - OpenCV
 - MATLAB/Simulink
 
 ## Puesta en marcha
 
-Instalar Pixi si no está disponible:
+Descargar la imagen oficial de Autoware Core para ROS2 Humble:
 
 ```bash
-curl -fsSL https://pixi.sh/install.sh | bash
+docker pull ghcr.io/autowarefoundation/autoware:core-humble
 ```
 
-Preparar el entorno:
+Permitir acceso gráfico desde el contenedor:
 
 ```bash
-pixi install
+xhost +local:docker
 ```
 
-Compilar el workspace ROS2:
+Entrar en el contenedor:
 
 ```bash
-pixi run build
+docker compose run --rm autoware-core
 ```
 
-Cargar el entorno compilado:
+Compilar el workspace ROS2 dentro del contenedor:
 
 ```bash
-source install/setup.bash
+./scripts/docker_build.sh
 ```
 
-Lanzar la simulación base:
+Lanzar la simulación base dentro del contenedor:
 
 ```bash
-pixi run sim
+./scripts/docker_sim.sh
 ```
+
+Más detalles en `docs/docker.md`.

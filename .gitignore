@@ -1,7 +1,6 @@
 build/
 install/
 log/
-.pixi/
 .vscode/
 .cursor/
 .windsurf/
