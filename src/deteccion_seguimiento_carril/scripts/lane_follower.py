@@ -16,7 +16,9 @@ class LaneFollower(Node):
 
         # Declarar parámetros
         self.declare_parameter('update_rate', 10.0)  # 10 Hz
+        self.declare_parameter('control_rate', 60.0)
         self.declare_parameter('target_speed', 3.0)
+        self.declare_parameter('target_acceleration', 1.0)
         self.declare_parameter('image_topic', '/sensing/camera/traffic_light/image_raw')
         self.declare_parameter('control_topic', '/control/command/control_cmd')
         self.declare_parameter('gear_topic', '/control/command/gear_cmd')
@@ -28,7 +30,9 @@ class LaneFollower(Node):
 
         # Obtener valores de los parámetros
         self.update_rate = float(self.get_parameter('update_rate').value)
+        self.control_rate = float(self.get_parameter('control_rate').value)
         self.target_speed = float(self.get_parameter('target_speed').value)
+        self.target_acceleration = float(self.get_parameter('target_acceleration').value)
         self.image_topic = self.get_parameter('image_topic').value
         self.control_topic = self.get_parameter('control_topic').value
         self.gear_topic = self.get_parameter('gear_topic').value
@@ -99,6 +103,7 @@ class LaneFollower(Node):
         
         # Crear timer
         self.status_timer = self.create_timer(1.0 / self.update_rate, self.publish_vehicle_state_commands)
+        self.control_timer = self.create_timer(1.0 / self.control_rate, self.publish_last_control)
         self.control_mode_timer = self.create_timer(1.0, self.request_autonomous_mode)
 
     def request_autonomous_mode(self):
@@ -186,11 +191,20 @@ class LaneFollower(Node):
         control.lateral.steering_tire_rotation_rate = 0.0
         control.longitudinal.stamp = control.stamp
         control.longitudinal.velocity = self.target_speed
-        control.longitudinal.acceleration = 0.0
+        control.longitudinal.acceleration = self.target_acceleration
         control.longitudinal.jerk = 0.0
-        control.longitudinal.is_defined_acceleration = True
-        control.longitudinal.is_defined_jerk = True
+        if self.target_acceleration != 0.0:
+            control.longitudinal.is_defined_acceleration = True
+        else:
+            control.longitudinal.is_defined_acceleration = False
+        if self.target_acceleration != 0.0:
+            control.longitudinal.is_defined_jerk = True
+        else:
+            control.longitudinal.is_defined_jerk = False
         self.control_pub.publish(control)
+
+    def publish_last_control(self):
+        self.publish_control(self.last_steering_angle)
 
 
 def main(args=None):
