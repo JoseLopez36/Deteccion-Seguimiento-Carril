@@ -89,19 +89,19 @@ ros2 launch autoware_launch planning_simulator.launch.xml map_path:=$HOME/autowa
 
 AWSIM permite ejecutar una simulación fotorrealista conectada con Autoware. Requiere una GPU NVIDIA RTX y drivers NVIDIA compatibles. Descargar AWSIM Demo y el mapa de Shinjuku en [AWSIM Quick Start Demo](https://tier4.github.io/AWSIM/GettingStarted/QuickStartDemo/).
 
-Ejecutar AWSIM desde el host haciendo doble click en `AWSIM-Demo.x86_64`.
-
-En un terminal, ejecutar el contenedor de Autoware:
+Ejecutar AWSIM desde el host:
 
 ```bash
-./tools/run_docker.sh
+./AWSIM-Demo.x86_64
 ```
 
-Lanzar Autoware conectado a AWSIM dentro del contenedor:
+Lanzar Autoware conectado a AWSIM:
 
 ```bash
-source ~/autoware/install/setup.bash
-ros2 launch autoware_launch e2e_simulator.launch.xml vehicle_model:=sample_vehicle sensor_model:=awsim_sensor_kit map_path:=$HOME/autoware_data/maps/Shinjuku-Map
+xhost +local:docker
+
+cd tools/
+HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm awsim
 ```
 
 Más info: [AWSIM Quick Start Demo](https://tier4.github.io/AWSIM/GettingStarted/QuickStartDemo/)
