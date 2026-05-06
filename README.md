@@ -21,46 +21,45 @@ El flujo previsto es:
 - Rafael Muñoz
 - José Francisco López
 
-## Stack técnico
-
-- Ubuntu 22.04
-- Docker
-- Autoware Core para ROS2 Humble
-- Gazebo
-- Python
-- OpenCV
-- MATLAB/Simulink
-
 ## Puesta en marcha
 
-Descargar la imagen oficial de Autoware Core para ROS2 Humble:
+### 1. Preparar Autoware en el host
+
+Clonar Autoware v1.8.0:
 
 ```bash
-docker pull ghcr.io/autowarefoundation/autoware:core-humble
+git clone https://github.com/autowarefoundation/autoware.git ~/autoware
+cd ~/autoware
+git checkout 1.8.0
 ```
 
-Entrar en el contenedor:
+Preparar las herramientas de instalación del Docker de Autoware:
 
 ```bash
-./run_docker.sh
+bash ansible/scripts/install-ansible.sh
+ansible-galaxy collection install -f -r ansible-galaxy-requirements.yaml
+ansible-playbook autoware.dev_env.install_docker -K
 ```
 
-Compilar el workspace ROS2 dentro del contenedor:
+Más info: [Documentación de instalación de Autoware con Docker](https://autowarefoundation.github.io/autoware-documentation/main/installation/autoware/docker-installation/)
+
+### 2. Descargar y ejecutar el contenedor
+
+Descargar la imagen de Autoware v1.8.0 para ROS2 Humble:
 
 ```bash
-colcon build --symlink-install
+docker pull ghcr.io/autowarefoundation/autoware:universe-cuda-humble-1.8.0
 ```
 
-Realizar el source del workspace:
+Ejecutar el contenedor:
 
 ```bash
-source install/setup.bash
+./docker/run_docker.sh
 ```
 
-Lanzar la simulación base dentro del contenedor:
+Probar el simulador de planificación de Autoware:
 
 ```bash
-ros2 launch deteccion_seguimiento_carril_sim sim.launch.py
+source ~/autoware/install/setup.bash
+ros2 launch autoware_launch planning_simulator.launch.xml map_path:=$HOME/autoware_data/maps/sample-map-planning vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit
 ```
-
-Más detalles en `docs/docker.md`.

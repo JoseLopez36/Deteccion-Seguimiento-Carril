@@ -1,9 +1,11 @@
 build/
 install/
 log/
+
 .vscode/
 .cursor/
 .windsurf/
+
 .env
 *.pyc
 __pycache__/
