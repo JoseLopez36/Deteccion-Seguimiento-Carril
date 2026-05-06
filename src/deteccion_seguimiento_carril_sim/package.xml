@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>deteccion_seguimiento_carril_sim</name>
+  <version>0.1.0</version>
+  <description>Paquete de simulación Gazebo para seguimiento de carril con ROS2 Humble.</description>
+  <maintainer email="josloprui6@alum.us.es">Agustín Mayor, Rafael Muñoz, José Francisco López</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>gazebo_ros</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>xacro</depend>
+  <depend>joint_state_publisher</depend>
+
+  <exec_depend>ros2launch</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
