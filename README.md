@@ -86,7 +86,7 @@ ros2 launch autoware_launch planning_simulator.launch.xml map_path:=$HOME/autowa
 
 ### 4. Instalar y ejecutar AWSIM
 
-AWSIM permite ejecutar una simulación fotorrealista conectada con Autoware. Requiere una GPU NVIDIA RTX y drivers NVIDIA compatibles. Descargar AWSIM Demo y el mapa de Shinjuku en [AWSIM Quick Start Demo](https://tier4.github.io/AWSIM/GettingStarted/QuickStartDemo/).
+AWSIM permite ejecutar una simulación fotorrealista conectada con Autoware. Requiere una GPU NVIDIA RTX y drivers NVIDIA compatibles. Descargar AWSIM Demo y el mapa de Shinjuku en [AWSIM Quick Start Demo](https://autowarefoundation.github.io/AWSIM/GettingStarted/QuickStartDemo/).
 
 Ejecutar AWSIM desde el host:
 
@@ -103,7 +103,7 @@ cd tools/
 HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm awsim
 ```
 
-Más info: [AWSIM Quick Start Demo](https://tier4.github.io/AWSIM/GettingStarted/QuickStartDemo/)
+Más info: [AWSIM Quick Start Demo](https://autowarefoundation.github.io/AWSIM/GettingStarted/QuickStartDemo/)
 
 ## Puesta en marcha
 
