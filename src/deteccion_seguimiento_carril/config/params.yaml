@@ -12,11 +12,13 @@ lane_detection_node:
   ros__parameters:
     image_topic: /carla/ego_vehicle/rgb_front/image
     lane_error_topic: /lane_detection/lane_error
+    lane_state_topic: /lane_detection/lane_state
 
 annotation_generator_node:
   ros__parameters:
     image_topic: /carla/ego_vehicle/rgb_front/image
     lane_error_topic: /lane_detection/lane_error
+    lane_state_topic: /lane_detection/lane_state
     annotations_topic: /carla/ego_vehicle/rgb_front/image/annotations
     image_width: 800
     image_height: 600
