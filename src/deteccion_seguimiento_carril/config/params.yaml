@@ -1,0 +1,22 @@
+vehicle_control_node:
+  ros__parameters:
+    control_rate: 20.0 # Hz
+    target_speed: 5.0 # m/s (~18 km/h)
+    max_steering_angle: 0.5 # rad
+    kp_throttle: 0.3
+    lane_error_topic: /lane_detection/lane_error
+    speedometer_topic: /carla/ego_vehicle/speedometer
+    vehicle_control_topic: /carla/ego_vehicle/vehicle_control_cmd
+
+lane_detection_node:
+  ros__parameters:
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    lane_error_topic: /lane_detection/lane_error
+
+annotation_generator_node:
+  ros__parameters:
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    lane_error_topic: /lane_detection/lane_error
+    annotations_topic: /carla/ego_vehicle/rgb_front/image/annotations
+    image_width: 800
+    image_height: 600

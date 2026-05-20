@@ -4,7 +4,7 @@ Repositorio para el trabajo de la asignatura **Control en Vehículos** del **MIE
 
 ## Idea del proyecto
 
-El objetivo es simular un sistema de detección y mantenimiento de carril utilizando cámaras virtuales sobre un vehículo simulado en ROS2 Jazzy y Gazebo.
+El objetivo es desarrollar un sistema de percepción y control básico para un vehículo autónomo simulado en **CARLA Simulator**, conectado mediante **ROS2 Humble**.
 
 El flujo previsto es:
 
@@ -13,7 +13,7 @@ El flujo previsto es:
 3. Control en cascada:
    - Bucle externo de visión para calcular la referencia de `yaw rate`.
    - Bucle interno para seguimiento de `yaw rate`.
-4. Validación del seguimiento de carril en un entorno simulado.
+4. Validación del seguimiento de carril en un entorno simulado en CARLA.
 
 ## Equipo
 
@@ -23,110 +23,108 @@ El flujo previsto es:
 
 ## Instalación
 
-### 1. Preparar Autoware en el host
+### Instalar CARLA Simulator con Docker
 
-Clonar Autoware:
-
-```bash
-git clone https://github.com/autowarefoundation/autoware.git ~/autoware
-cd ~/autoware
-```
-
-Preparar las herramientas de instalación del Docker de Autoware:
+Instalar NVIDIA Container Toolkit:
 
 ```bash
-bash ansible/scripts/install-ansible.sh
-ansible-galaxy collection install -f -r ansible-galaxy-requirements.yaml
-ansible-playbook autoware.dev_env.install_docker -K
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
 ```
 
-Más info: [Documentación de instalación de Autoware con Docker](https://autowarefoundation.github.io/autoware-documentation/main/installation/autoware/docker-installation/)
-
-### 2. Descargar los datos de planificación
-
-Descargar el mapa `sample-map-planning` y los modelos ML en `~/autoware_data`:
+Descargar y ejecutar CARLA Simulator:
 
 ```bash
-mkdir ~/autoware_data
-cd ~/autoware_data
-mkdir maps ml_models
-ansible-playbook autoware.dev_env.install_dev_env --tags demo_artifacts --ask-become-pass
-ansible-playbook autoware.dev_env.install_dev_env --tags ml_models --ask-become-pass
-```
+# Descargar la imagen de CARLA 0.9.15
+docker pull carlasim/carla:0.9.15
 
-El script deja los datos en:
-
-```text
-~/autoware_data/maps/sample-map-planning/
-~/autoware_data/ml_models/
-```
-
-Más info: [Documentación de planning simulation](https://autowarefoundation.github.io/autoware-documentation/main/demos/planning-sim/)
-
-### 3. Descargar y ejecutar el contenedor
-
-Descargar la imagen de Autoware para ROS2 Jazzy:
-
-```bash
-docker pull ghcr.io/autowarefoundation/autoware:universe-cuda-jazzy
-```
-
-Ejecutar el contenedor:
-
-```bash
-./tools/run_docker.sh
-```
-
-Probar el simulador de planificación de Autoware:
-
-```bash
-source ~/autoware/install/setup.bash
-ros2 launch autoware_launch planning_simulator.launch.xml map_path:=$HOME/autoware_data/maps/sample-map-planning vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit
-```
-
-### 4. Instalar y ejecutar AWSIM
-
-AWSIM permite ejecutar una simulación fotorrealista conectada con Autoware. Requiere una GPU NVIDIA RTX y drivers NVIDIA compatibles. Descargar AWSIM Demo y el mapa de Shinjuku en [AWSIM Quick Start Demo](https://autowarefoundation.github.io/AWSIM/GettingStarted/QuickStartDemo/).
-
-Ejecutar AWSIM desde el host:
-
-```bash
-./AWSIM-demo.x86_64 --json_path AWSIM-config.json
-```
-
-Lanzar Autoware conectado a AWSIM:
-
-```bash
+# Ejecutar CARLA
 xhost +local:docker
+docker run --rm --privileged --gpus all --net=host \
+  -e DISPLAY=$DISPLAY \
+  -e XDG_RUNTIME_DIR=/tmp/runtime-carla \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+  --user $(id -u):$(id -g) \
+  --workdir /home/carla \
+  -it carlasim/carla:0.9.15 \
+  ./CarlaUE4.sh -windowed -carla-rpc-port=2001 -nosound
 
-cd tools/
-HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm awsim
+# Ejecutar CARLA en modo headless
+docker run --rm --privileged --gpus all --net=host \
+  --user $(id -u):$(id -g) \
+  --workdir /home/carla \
+  -it carlasim/carla:0.9.15 \
+  ./CarlaUE4.sh -RenderOffScreen -carla-rpc-port=2001 -nosound
 ```
 
-Más info: [AWSIM Quick Start Demo](https://autowarefoundation.github.io/AWSIM/GettingStarted/QuickStartDemo/)
+Más info: [Guía de instalación de CARLA con Docker](https://medium.com/aimonks/downloading-carla-simulator-with-docker-on-ubuntu-22-04-in-2025-220904de2942)
 
 ## Puesta en marcha
 
-Compilar el paquete ROS2 dentro del contenedor de desarrollo:
+### Construir la imagen del contenedor ROS2
+
+Desde la raíz del repositorio:
 
 ```bash
-./tools/run_docker.sh
+docker build -t deteccion_seguimiento_carril docker/
 ```
+
+### Lanzar con Docker Compose
+
+Con CARLA ya corriendo, levantar el bridge y el sistema de navegación en un solo comando desde la raíz del repositorio:
 
 ```bash
-cd /home/aw/workspace
-rm -rf build/deteccion_seguimiento_carril install/deteccion_seguimiento_carril log
-colcon build --symlink-install --packages-select deteccion_seguimiento_carril
-source install/setup.bash
+docker compose -f tools/docker-compose-carla.yaml up
 ```
 
-Con AWSIM ya ejecutándose, lanzar el sistema de seguimiento de carril usando Docker Compose:
+Esto arranca tres contenedores en paralelo:
+
+| Servicio | Contenedor | Descripción |
+|---|---|---|
+| `ros_bridge` | `carla_ros_bridge` | Bridge CARLA → ROS2 + spawn del ego-vehicle |
+| `navegacion` | `deteccion_seguimiento_carril` | Compila y lanza el paquete del proyecto |
+| `foxglove` | `foxglove_bridge` | WebSocket bridge en `ws://localhost:8765` para Foxglove Studio |
+
+Para lanzarlos en terminales separadas y ver los logs independientemente:
 
 ```bash
-cd tools/
-HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm deteccion_seguimiento_carril
+docker compose -f tools/docker-compose-carla.yaml up ros_bridge
+docker compose -f tools/docker-compose-carla.yaml up navegacion
+docker compose -f tools/docker-compose-carla.yaml up foxglove
 ```
 
-El servicio `deteccion_seguimiento_carril` de `tools/docker-compose.yaml` monta el workspace, activa `/opt/autoware/setup.bash`, activa `install/setup.bash` y ejecuta `ros2 launch deteccion_seguimiento_carril run.launch.py`.
+### Ejecutar comandos en los contenedores
 
-El nodo se suscribe a la cámara de AWSIM en `/sensing/camera/traffic_light/image_raw` y publica comandos de control en `/control/command/control_cmd`.
+Abrir una shell interactiva en cualquiera de los tres contenedores en ejecución:
+
+```bash
+docker exec -it carla_ros_bridge bash
+docker exec -it deteccion_seguimiento_carril bash
+docker exec -it foxglove_bridge bash
+```
+
+### Visualización con Foxglove Studio
+
+Foxglove Studio es una alternativa a rviz2 que corre en el **host** (o en el navegador) y se conecta al contenedor sin necesidad de reenvío X11.
+
+#### Conexión
+
+1. Abre [Foxglove Studio](https://studio.foxglove.dev) en el navegador o la app de escritorio.
+2. Selecciona **Open connection → Foxglove WebSocket**.
+3. Introduce la URL:
+   ```
+   ws://172.17.0.1:8765
+   ```
+   > `172.17.0.1` es la IP del host desde dentro de la red Docker bridge. El puerto `8765` es el que expone el servicio `foxglove_bridge` del compose.
+
+#### Importar layout
+
+Para cargar el layout predefinido con las dos cámaras (`rgb_view` y `rgb_front`):
+
+1. En Foxglove Studio, ve a **View → Import layout from file** (o el icono de layout en la barra lateral).
+2. Selecciona el fichero `tools/foxglove.json` de este repositorio.
+
+El layout carga dos paneles de imagen:
+- **Izquierda**: `/carla/ego_vehicle/rgb_view/image` — vista exterior del vehículo
+- **Derecha**: `/carla/ego_vehicle/rgb_front/image` — cámara frontal (detección de señales)
