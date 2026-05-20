@@ -13,13 +13,13 @@ def generate_launch_description():
     ])
 
     return LaunchDescription([
-        # Node(
-        #     package=package_name,
-        #     executable='vehicle_control_node.py',
-        #     name='vehicle_control_node',
-        #     output='screen',
-        #     parameters=[params_file],
-        # ),
+        Node(
+            package=package_name,
+            executable='vehicle_control_node.py',
+            name='vehicle_control_node',
+            output='screen',
+            parameters=[params_file],
+        ),
         Node(
             package=package_name,
             executable='lane_detection_node.py',
