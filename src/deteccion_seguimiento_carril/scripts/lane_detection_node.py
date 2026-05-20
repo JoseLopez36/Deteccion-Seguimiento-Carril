@@ -82,6 +82,16 @@ class LaneDetectionNode(Node):
         left, right = self._detector._detect(frame, h, w)
         state       = self._detector._analyze(w, left, right, fps=0.0)
 
+        if state.zone == 'UNKNOWN':
+            self.get_logger().warn('LANE_LOST: no se detectan líneas de carril', throttle_duration_sec=2.0)
+        else:
+            self.get_logger().info(
+                f'zone={state.zone}  lateral={state.lateral:.2f}  '
+                f'offset={state.offset_px:+d}px  '
+                f'L={int(state.left_detected)}  R={int(state.right_detected)}',
+                throttle_duration_sec=1.0,
+            )
+
         # Publicar error lateral
         error_msg      = Float32()
         error_msg.data = float(state.offset_px)

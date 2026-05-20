@@ -28,6 +28,11 @@ class VehicleControlNode(Node):
         self.declare_parameter('target_speed', 5.0)          # m/s
         self.declare_parameter('max_steering_angle', 0.5)    # rad
         self.declare_parameter('kp_throttle', 0.3)
+        self.declare_parameter('ki_throttle', 0.01)
+        self.declare_parameter('kd_throttle', 0.05)
+        self.declare_parameter('kp_steering', 0.002)
+        self.declare_parameter('ki_steering', 0.001)
+        self.declare_parameter('kd_steering', -1.07e-05)
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
         self.declare_parameter('speedometer_topic', '/carla/ego_vehicle/speedometer')
         self.declare_parameter('vehicle_control_topic', '/carla/ego_vehicle/vehicle_control_cmd')
@@ -36,6 +41,11 @@ class VehicleControlNode(Node):
         self.target_speed         = float(self.get_parameter('target_speed').value)
         self.max_steering_angle   = float(self.get_parameter('max_steering_angle').value)
         self.kp_throttle          = float(self.get_parameter('kp_throttle').value)
+        self.ki_throttle          = float(self.get_parameter('ki_throttle').value)
+        self.kd_throttle          = float(self.get_parameter('kd_throttle').value)
+        self.kp_steering          = float(self.get_parameter('kp_steering').value)
+        self.ki_steering          = float(self.get_parameter('ki_steering').value)
+        self.kd_steering          = float(self.get_parameter('kd_steering').value)
         self.lane_error_topic     = self.get_parameter('lane_error_topic').value
         self.speedometer_topic    = self.get_parameter('speedometer_topic').value
         self.vehicle_control_topic = self.get_parameter('vehicle_control_topic').value
@@ -58,6 +68,16 @@ class VehicleControlNode(Node):
         self.lane_error    = 0.0
         self.speed_limit   = self.target_speed
         self.current_speed = 0.0
+
+        # --- Estado PID crucero ---
+        self._throttle_integral  = 0.0
+        self._throttle_prev_err  = 0.0
+
+        # --- Estado PID dirección ---
+        self._steering_integral  = 0.0
+        self._steering_prev_err  = 0.0
+
+        self._prev_time = self.get_clock().now()
 
         # --- Publicadores ---
         self.control_pub = self.create_publisher(
@@ -100,25 +120,67 @@ class VehicleControlNode(Node):
     # ------------------------------------------------------------------
 
     def _control_loop(self):
-        # Control de crucero
-        speed_error = self.speed_limit - self.current_speed
-        throttle = float(max(0.0, min(1.0, self.kp_throttle * speed_error)))
-        brake = 0.0
+        now = self.get_clock().now()
+        dt  = max((now - self._prev_time).nanoseconds * 1e-9, 1e-6)
+        self._prev_time = now
 
-        # TODO: Control de dirección
-        target_steering = 0.0
-        steering = float(max(-self.max_steering_angle, min(self.max_steering_angle, target_steering)))
+        throttle, brake = self._cruise_control(dt)
+        steering        = self._keep_lane(dt)
 
-        # Aplicar control
+        self.get_logger().info(
+            f'speed={self.current_speed:.2f}m/s  target={self.speed_limit:.1f}m/s  '
+            f'throttle={throttle:.2f}  brake={brake:.2f}  '
+            f'steer={steering:+.3f}rad  lane_err={self.lane_error:+.1f}px',
+            throttle_duration_sec=1.0,
+        )
+
         cmd = CarlaEgoVehicleControl()
-        cmd.hand_brake = False
-        cmd.reverse = False
+        cmd.hand_brake        = False
+        cmd.reverse           = False
         cmd.manual_gear_shift = False
-        cmd.throttle = throttle
-        cmd.brake = brake
-        cmd.steer = steering
+        cmd.throttle          = throttle
+        cmd.brake             = brake
+        cmd.steer             = steering
 
         self.control_pub.publish(cmd)
+
+    def _cruise_control(self, dt: float):
+        """PID de velocidad. Devuelve (throttle, brake) en [0, 1]"""
+        error = self.speed_limit - self.current_speed
+
+        self._throttle_integral += error * dt
+        self._throttle_integral  = max(-10.0, min(10.0, self._throttle_integral))  # anti-windup
+        derivative = (error - self._throttle_prev_err) / dt
+        self._throttle_prev_err = error
+
+        output = (self.kp_throttle * error
+                  + self.ki_throttle * self._throttle_integral
+                  + self.kd_throttle * derivative)
+
+        throttle = float(max(0.0, min(1.0,  output)))
+        brake    = float(max(0.0, min(1.0, -output)))
+        return throttle, brake
+
+    def _keep_lane(self, dt: float) -> float:
+        """PID de mantenimiento de carril. Devuelve steering en [-max, +max]
+
+        offset_px = cx - lane_center:
+          > 0  → carril a la izquierda del frame → girar izquierda (steering < 0)
+          < 0  → carril a la derecha del frame  → girar derecha   (steering > 0)
+        Se niega el error para que el signo del PID sea correcto.
+        """
+        error = -self.lane_error  # negado: offset_px positivo → steering negativo
+
+        self._steering_integral += error * dt
+        self._steering_integral  = max(-500.0, min(500.0, self._steering_integral))  # anti-windup
+        derivative = (error - self._steering_prev_err) / dt
+        self._steering_prev_err = error
+
+        output = (self.kp_steering * error
+                  + self.ki_steering * self._steering_integral
+                  + self.kd_steering * derivative)
+
+        return float(max(-self.max_steering_angle, min(self.max_steering_angle, output)))
 
 
 def main(args=None):

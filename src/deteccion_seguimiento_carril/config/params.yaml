@@ -4,6 +4,11 @@ vehicle_control_node:
     target_speed: 5.0 # m/s (~18 km/h)
     max_steering_angle: 0.5 # rad
     kp_throttle: 0.3
+    ki_throttle: 0.01
+    kd_throttle: 0.05
+    kp_steering: 0.002
+    ki_steering: 0.001
+    kd_steering: -1.07e-05
     lane_error_topic: /lane_detection/lane_error
     speedometer_topic: /carla/ego_vehicle/speedometer
     vehicle_control_topic: /carla/ego_vehicle/vehicle_control_cmd
@@ -20,5 +25,7 @@ annotation_generator_node:
     lane_error_topic: /lane_detection/lane_error
     lane_state_topic: /lane_detection/lane_state
     annotations_topic: /carla/ego_vehicle/rgb_front/image/annotations
+    speedometer_topic: /carla/ego_vehicle/speedometer
+    vehicle_control_topic: /carla/ego_vehicle/vehicle_control_cmd
     image_width: 800
     image_height: 600

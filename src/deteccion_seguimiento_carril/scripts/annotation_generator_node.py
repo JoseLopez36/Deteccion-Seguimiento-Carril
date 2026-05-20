@@ -10,6 +10,7 @@ from foxglove_msgs.msg import Point2
 
 from std_msgs.msg import Float32, String
 from sensor_msgs.msg import Image
+from carla_msgs.msg import CarlaEgoVehicleControl
 from foxglove_msgs.msg import ImageAnnotations, PointsAnnotation, TextAnnotation
 
 
@@ -18,9 +19,11 @@ class AnnotationGeneratorNode(Node):
     Nodo que genera anotaciones visuales para Foxglove Studio.
 
     Suscripciones:
-      - /carla/ego_vehicle/rgb_front/image  (sensor_msgs/Image)  — timestamp de referencia
-      - /lane_detection/lane_error          (std_msgs/Float32)   — error lateral en píxeles
-      - /lane_detection/lane_state          (std_msgs/String)    — JSON con líneas y estado
+      - /carla/ego_vehicle/rgb_front/image       (sensor_msgs/Image)              — timestamp de referencia
+      - /lane_detection/lane_error               (std_msgs/Float32)               — error lateral en píxeles
+      - /lane_detection/lane_state               (std_msgs/String)                — JSON con líneas y estado
+      - /carla/ego_vehicle/speedometer           (std_msgs/Float32)               — velocidad actual
+      - /carla/ego_vehicle/vehicle_control_cmd   (carla_msgs/CarlaEgoVehicleControl) — comandos de control
 
     Publicaciones:
       - /foxglove/annotations  (foxglove_msgs/ImageAnnotations)  — anotaciones para Foxglove
@@ -34,15 +37,19 @@ class AnnotationGeneratorNode(Node):
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
         self.declare_parameter('lane_state_topic', '/lane_detection/lane_state')
         self.declare_parameter('annotations_topic', '/foxglove/annotations')
+        self.declare_parameter('speedometer_topic',  '/carla/ego_vehicle/speedometer')
+        self.declare_parameter('vehicle_control_topic', '/carla/ego_vehicle/vehicle_control_cmd')
         self.declare_parameter('image_width',  800)
         self.declare_parameter('image_height', 600)
 
-        self.image_topic       = self.get_parameter('image_topic').value
-        self.lane_error_topic  = self.get_parameter('lane_error_topic').value
-        self.lane_state_topic  = self.get_parameter('lane_state_topic').value
-        self.annotations_topic = self.get_parameter('annotations_topic').value
-        self.image_width       = int(self.get_parameter('image_width').value)
-        self.image_height      = int(self.get_parameter('image_height').value)
+        self.image_topic            = self.get_parameter('image_topic').value
+        self.lane_error_topic       = self.get_parameter('lane_error_topic').value
+        self.lane_state_topic       = self.get_parameter('lane_state_topic').value
+        self.annotations_topic      = self.get_parameter('annotations_topic').value
+        self.speedometer_topic      = self.get_parameter('speedometer_topic').value
+        self.vehicle_control_topic  = self.get_parameter('vehicle_control_topic').value
+        self.image_width            = int(self.get_parameter('image_width').value)
+        self.image_height           = int(self.get_parameter('image_height').value)
 
         # --- QoS ---
         sensor_qos = QoSProfile(
@@ -59,8 +66,12 @@ class AnnotationGeneratorNode(Node):
         )
 
         # --- Estado interno ---
-        self.lane_error = 0.0
+        self.lane_error    = 0.0
         self.lane_state: dict = {}
+        self.current_speed = 0.0
+        self.cmd_throttle  = 0.0
+        self.cmd_brake     = 0.0
+        self.cmd_steer     = 0.0
 
         # --- Publicadores ---
         self.annotations_pub = self.create_publisher(
@@ -70,9 +81,13 @@ class AnnotationGeneratorNode(Node):
         )
 
         # --- Suscriptores ---
-        self.create_subscription(Image,   self.image_topic,       self._on_image,      sensor_qos)
-        self.create_subscription(Float32, self.lane_error_topic,  self._on_lane_error, reliable_qos)
-        self.create_subscription(String,  self.lane_state_topic,  self._on_lane_state, reliable_qos)
+        self.create_subscription(Image,   self.image_topic,           self._on_image,          sensor_qos)
+        self.create_subscription(Float32, self.lane_error_topic,      self._on_lane_error,     reliable_qos)
+        self.create_subscription(String,  self.lane_state_topic,      self._on_lane_state,     reliable_qos)
+        self.create_subscription(Float32, self.speedometer_topic,     self._on_speedometer,    sensor_qos)
+        self.create_subscription(
+            CarlaEgoVehicleControl, self.vehicle_control_topic,
+            self._on_vehicle_control, reliable_qos)
 
         self.get_logger().info('annotation_generator_node iniciado.')
 
@@ -88,6 +103,14 @@ class AnnotationGeneratorNode(Node):
             self.lane_state = json.loads(msg.data)
         except json.JSONDecodeError:
             pass
+
+    def _on_speedometer(self, msg: Float32):
+        self.current_speed = msg.data
+
+    def _on_vehicle_control(self, msg: CarlaEgoVehicleControl):
+        self.cmd_throttle = msg.throttle
+        self.cmd_brake    = msg.brake
+        self.cmd_steer    = msg.steer
 
     # ------------------------------------------------------------------
     # Callback principal: se ejecuta por cada frame de cámara
@@ -188,7 +211,7 @@ class AnnotationGeneratorNode(Node):
         zone_text.position.x = 10.0
         zone_text.position.y = 30.0
         zone_text.text = f'Zona: {zone}'
-        zone_text.font_size = 16.0
+        zone_text.font_size = 20.0
         zone_text.text_color.r = 0.0
         zone_text.text_color.g = 1.0
         zone_text.text_color.b = 0.4
@@ -201,7 +224,7 @@ class AnnotationGeneratorNode(Node):
         error_text.position.x = 10.0
         error_text.position.y = 55.0
         error_text.text = f'Lateral: {lateral:.2f}  Offset: {int(offset):+d}px'
-        error_text.font_size = 14.0
+        error_text.font_size = 18.0
         error_text.text_color.r = 1.0
         error_text.text_color.g = 1.0
         error_text.text_color.b = 0.0
@@ -214,13 +237,55 @@ class AnnotationGeneratorNode(Node):
         det_text.position.x = 10.0
         det_text.position.y = 75.0
         det_text.text = f"L:{int(s.get('left_detected', False))}  R:{int(s.get('right_detected', False))}"
-        det_text.font_size = 12.0
+        det_text.font_size = 16.0
         det_text.text_color.r = 0.6
         det_text.text_color.g = 0.6
         det_text.text_color.b = 0.6
         det_text.text_color.a = 1.0
         det_text.background_color.a = 0.0
         ann.texts.append(det_text)
+
+        # --- HUD de control del vehículo (esquina superior derecha) ---
+        speed_kmh = self.current_speed * 3.6
+
+        speed_text = TextAnnotation()
+        speed_text.timestamp = stamp
+        speed_text.position.x = w - 220.0
+        speed_text.position.y = 30.0
+        speed_text.text = f'Vel: {speed_kmh:.1f} km/h'
+        speed_text.font_size = 20.0
+        speed_text.text_color.r = 1.0
+        speed_text.text_color.g = 1.0
+        speed_text.text_color.b = 1.0
+        speed_text.text_color.a = 1.0
+        speed_text.background_color.a = 0.0
+        ann.texts.append(speed_text)
+
+        throttle_text = TextAnnotation()
+        throttle_text.timestamp = stamp
+        throttle_text.position.x = w - 220.0
+        throttle_text.position.y = 55.0
+        throttle_text.text = f'Throttle: {self.cmd_throttle:.2f}  Brake: {self.cmd_brake:.2f}'
+        throttle_text.font_size = 17.0
+        throttle_text.text_color.r = 0.4
+        throttle_text.text_color.g = 1.0
+        throttle_text.text_color.b = 0.4
+        throttle_text.text_color.a = 1.0
+        throttle_text.background_color.a = 0.0
+        ann.texts.append(throttle_text)
+
+        steer_text = TextAnnotation()
+        steer_text.timestamp = stamp
+        steer_text.position.x = w - 220.0
+        steer_text.position.y = 75.0
+        steer_text.text = f'Steer: {self.cmd_steer:+.3f} rad'
+        steer_text.font_size = 17.0
+        steer_text.text_color.r = 1.0
+        steer_text.text_color.g = 0.65
+        steer_text.text_color.b = 0.0
+        steer_text.text_color.a = 1.0
+        steer_text.background_color.a = 0.0
+        ann.texts.append(steer_text)
 
         return ann
 
