@@ -33,5 +33,12 @@ def generate_launch_description():
             name='annotation_generator_node',
             output='screen',
             parameters=[params_file],
+        ),
+        Node(
+            package=package_name,
+            executable='lane_dataset_node.py',
+            name='lane_dataset_node',
+            output='screen',
+            parameters=[params_file],
         )
     ])

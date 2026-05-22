@@ -88,12 +88,7 @@
       },
       "synchronize": false,
       "imageMode": {
-        "imageTopic": "/carla/ego_vehicle/rgb_front/image",
-        "annotations": {
-          "/carla/ego_vehicle/rgb_front/image/annotations": {
-            "visible": true
-          }
-        }
+        "imageTopic": "/carla/ego_vehicle/rgb_front/image"
       }
     }
   },
@@ -106,6 +101,6 @@
     "direction": "row",
     "first": "Image!1dzv3h9",
     "second": "Image!3459h0l",
-    "splitPercentage": 50.0
+    "splitPercentage": 66.66
   }
 }
