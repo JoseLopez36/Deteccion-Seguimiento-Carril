@@ -102,7 +102,7 @@ class AnnotationGeneratorNode(Node):
         try:
             self.lane_state = json.loads(msg.data)
         except json.JSONDecodeError:
-            pass
+            self.get_logger().debug('Failed to decode lane_state JSON')
 
     def _on_speedometer(self, msg: Float32):
         self.current_speed = msg.data
@@ -121,171 +121,135 @@ class AnnotationGeneratorNode(Node):
         self.annotations_pub.publish(annotations)
 
     # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _point2(x: float, y: float) -> Point2:
+        p = Point2()
+        p.x = float(x)
+        p.y = float(y)
+        return p
+
+    @staticmethod
+    def _points_annotation(stamp: Time, ann_type, thickness: float,
+                           outline_r: float, outline_g: float,
+                           outline_b: float, outline_a: float,
+                           fill_r: float = 0.0, fill_g: float = 0.0,
+                           fill_b: float = 0.0, fill_a: float = 0.0) -> PointsAnnotation:
+        ann = PointsAnnotation()
+        ann.timestamp = stamp
+        ann.type = ann_type
+        ann.thickness = thickness
+        ann.outline_color.r = outline_r
+        ann.outline_color.g = outline_g
+        ann.outline_color.b = outline_b
+        ann.outline_color.a = outline_a
+        ann.fill_color.r = fill_r
+        ann.fill_color.g = fill_g
+        ann.fill_color.b = fill_b
+        ann.fill_color.a = fill_a
+        return ann
+
+    @staticmethod
+    def _text_annotation(stamp: Time, x: float, y: float, text: str,
+                         font_size: float,
+                         r: float, g: float, b: float, a: float) -> TextAnnotation:
+        t = TextAnnotation()
+        t.timestamp = stamp
+        t.position.x = float(x)
+        t.position.y = float(y)
+        t.text = text
+        t.font_size = font_size
+        t.text_color.r = r
+        t.text_color.g = g
+        t.text_color.b = b
+        t.text_color.a = a
+        t.background_color.a = 0.0
+        return t
+
+    # ------------------------------------------------------------------
     # Construcción de anotaciones
     # ------------------------------------------------------------------
 
     def _build_annotations(self, stamp: Time) -> ImageAnnotations:
         ann = ImageAnnotations()
-        s   = self.lane_state
+        s = self.lane_state
 
-        w = float(s.get('image_width',  self.image_width))
+        w = float(s.get('image_width', self.image_width))
         h = float(s.get('image_height', self.image_height))
         cx = w / 2.0
 
-        left  = s.get('left')   # [x_bot, y_bot, x_top, y_top] or None
+        left = s.get('left')
         right = s.get('right')
 
-        # --- Línea izquierda del carril ---
         if left:
-            left_line = PointsAnnotation()
-            left_line.timestamp = stamp
-            left_line.type      = PointsAnnotation.LINE_STRIP
-            left_line.thickness = 4.0
-            left_line.outline_color.r = 1.0
-            left_line.outline_color.g = 0.39
-            left_line.outline_color.b = 0.0
-            left_line.outline_color.a = 1.0
-            p0 = Point2(); p0.x = float(left[0]); p0.y = float(left[1])
-            p1 = Point2(); p1.x = float(left[2]); p1.y = float(left[3])
-            left_line.points.extend([p0, p1])
-            ann.points.append(left_line)
+            line = self._points_annotation(
+                stamp, PointsAnnotation.LINE_STRIP, 4.0,
+                1.0, 0.39, 0.0, 1.0)
+            line.points.extend([
+                self._point2(left[0], left[1]),
+                self._point2(left[2], left[3])])
+            ann.points.append(line)
 
-        # --- Línea derecha del carril ---
         if right:
-            right_line = PointsAnnotation()
-            right_line.timestamp = stamp
-            right_line.type      = PointsAnnotation.LINE_STRIP
-            right_line.thickness = 4.0
-            right_line.outline_color.r = 0.0
-            right_line.outline_color.g = 0.78
-            right_line.outline_color.b = 1.0
-            right_line.outline_color.a = 1.0
-            p0 = Point2(); p0.x = float(right[0]); p0.y = float(right[1])
-            p1 = Point2(); p1.x = float(right[2]); p1.y = float(right[3])
-            right_line.points.extend([p0, p1])
-            ann.points.append(right_line)
+            line = self._points_annotation(
+                stamp, PointsAnnotation.LINE_STRIP, 4.0,
+                0.0, 0.78, 1.0, 1.0)
+            line.points.extend([
+                self._point2(right[0], right[1]),
+                self._point2(right[2], right[3])])
+            ann.points.append(line)
 
-        # --- Polígono de relleno del carril (cuando ambas líneas detectadas) ---
         if left and right:
-            poly = PointsAnnotation()
-            poly.timestamp = stamp
-            poly.type      = PointsAnnotation.LINE_LOOP
-            poly.thickness = 2.0
-            poly.outline_color.r = 0.0
-            poly.outline_color.g = 0.71
-            poly.outline_color.b = 0.0
-            poly.outline_color.a = 0.6
-            poly.fill_color.r = 0.0
-            poly.fill_color.g = 0.71
-            poly.fill_color.b = 0.0
-            poly.fill_color.a = 0.15
-            pb = Point2(); pb.x = float(left[0]);  pb.y = float(left[1])
-            pt = Point2(); pt.x = float(left[2]);  pt.y = float(left[3])
-            qt = Point2(); qt.x = float(right[2]); qt.y = float(right[3])
-            qb = Point2(); qb.x = float(right[0]); qb.y = float(right[1])
-            poly.points.extend([pb, pt, qt, qb])
+            poly = self._points_annotation(
+                stamp, PointsAnnotation.LINE_LOOP, 2.0,
+                0.0, 0.71, 0.0, 0.6,
+                0.0, 0.71, 0.0, 0.15)
+            poly.points.extend([
+                self._point2(left[0], left[1]),
+                self._point2(left[2], left[3]),
+                self._point2(right[2], right[3]),
+                self._point2(right[0], right[1])])
             ann.points.append(poly)
 
-        # --- Línea de desviación del centro del carril ---
-        deviation = PointsAnnotation()
-        deviation.timestamp = stamp
-        deviation.type      = PointsAnnotation.LINE_STRIP
-        deviation.thickness = 2.0
-        deviation.outline_color.r = 1.0
-        deviation.outline_color.g = 1.0
-        deviation.outline_color.b = 0.0
-        deviation.outline_color.a = 1.0
+        deviation = self._points_annotation(
+            stamp, PointsAnnotation.LINE_STRIP, 2.0,
+            1.0, 1.0, 0.0, 1.0)
         lane_center_x = cx - self.lane_error
-        dp0 = Point2(); dp0.x = cx;            dp0.y = h * 0.7
-        dp1 = Point2(); dp1.x = lane_center_x; dp1.y = h * 0.7
-        deviation.points.extend([dp0, dp1])
+        deviation.points.extend([
+            self._point2(cx, h * 0.7),
+            self._point2(lane_center_x, h * 0.7)])
         ann.points.append(deviation)
 
-        # --- Texto: zona y error lateral ---
-        zone     = s.get('zone',     'UNKNOWN')
-        lateral  = s.get('lateral',  0.5)
-        offset   = s.get('offset_px', self.lane_error)
+        zone = s.get('zone', 'UNKNOWN')
+        lateral = s.get('lateral', 0.5)
+        offset = s.get('offset_px', self.lane_error)
 
-        zone_text = TextAnnotation()
-        zone_text.timestamp = stamp
-        zone_text.position.x = 10.0
-        zone_text.position.y = 30.0
-        zone_text.text = f'Zona: {zone}'
-        zone_text.font_size = 20.0
-        zone_text.text_color.r = 0.0
-        zone_text.text_color.g = 1.0
-        zone_text.text_color.b = 0.4
-        zone_text.text_color.a = 1.0
-        zone_text.background_color.a = 0.0
-        ann.texts.append(zone_text)
+        ann.texts.append(self._text_annotation(
+            stamp, 10.0, 30.0, f'Zona: {zone}', 20.0,
+            0.0, 1.0, 0.4, 1.0))
+        ann.texts.append(self._text_annotation(
+            stamp, 10.0, 55.0,
+            f'Lateral: {lateral:.2f}  Offset: {int(offset):+d}px', 18.0,
+            1.0, 1.0, 0.0, 1.0))
+        ann.texts.append(self._text_annotation(
+            stamp, 10.0, 75.0,
+            f"L:{int(s.get('left_detected', False))}  R:{int(s.get('right_detected', False))}",
+            16.0, 0.6, 0.6, 0.6, 1.0))
 
-        error_text = TextAnnotation()
-        error_text.timestamp = stamp
-        error_text.position.x = 10.0
-        error_text.position.y = 55.0
-        error_text.text = f'Lateral: {lateral:.2f}  Offset: {int(offset):+d}px'
-        error_text.font_size = 18.0
-        error_text.text_color.r = 1.0
-        error_text.text_color.g = 1.0
-        error_text.text_color.b = 0.0
-        error_text.text_color.a = 1.0
-        error_text.background_color.a = 0.0
-        ann.texts.append(error_text)
-
-        det_text = TextAnnotation()
-        det_text.timestamp = stamp
-        det_text.position.x = 10.0
-        det_text.position.y = 75.0
-        det_text.text = f"L:{int(s.get('left_detected', False))}  R:{int(s.get('right_detected', False))}"
-        det_text.font_size = 16.0
-        det_text.text_color.r = 0.6
-        det_text.text_color.g = 0.6
-        det_text.text_color.b = 0.6
-        det_text.text_color.a = 1.0
-        det_text.background_color.a = 0.0
-        ann.texts.append(det_text)
-
-        # --- HUD de control del vehículo (esquina superior derecha) ---
         speed_kmh = self.current_speed * 3.6
-
-        speed_text = TextAnnotation()
-        speed_text.timestamp = stamp
-        speed_text.position.x = w - 220.0
-        speed_text.position.y = 30.0
-        speed_text.text = f'Vel: {speed_kmh:.1f} km/h'
-        speed_text.font_size = 20.0
-        speed_text.text_color.r = 1.0
-        speed_text.text_color.g = 1.0
-        speed_text.text_color.b = 1.0
-        speed_text.text_color.a = 1.0
-        speed_text.background_color.a = 0.0
-        ann.texts.append(speed_text)
-
-        throttle_text = TextAnnotation()
-        throttle_text.timestamp = stamp
-        throttle_text.position.x = w - 220.0
-        throttle_text.position.y = 55.0
-        throttle_text.text = f'Throttle: {self.cmd_throttle:.2f}  Brake: {self.cmd_brake:.2f}'
-        throttle_text.font_size = 17.0
-        throttle_text.text_color.r = 0.4
-        throttle_text.text_color.g = 1.0
-        throttle_text.text_color.b = 0.4
-        throttle_text.text_color.a = 1.0
-        throttle_text.background_color.a = 0.0
-        ann.texts.append(throttle_text)
-
-        steer_text = TextAnnotation()
-        steer_text.timestamp = stamp
-        steer_text.position.x = w - 220.0
-        steer_text.position.y = 75.0
-        steer_text.text = f'Steer: {self.cmd_steer:+.3f} rad'
-        steer_text.font_size = 17.0
-        steer_text.text_color.r = 1.0
-        steer_text.text_color.g = 0.65
-        steer_text.text_color.b = 0.0
-        steer_text.text_color.a = 1.0
-        steer_text.background_color.a = 0.0
-        ann.texts.append(steer_text)
+        ann.texts.append(self._text_annotation(
+            stamp, w - 220.0, 30.0, f'Vel: {speed_kmh:.1f} km/h', 20.0,
+            1.0, 1.0, 1.0, 1.0))
+        ann.texts.append(self._text_annotation(
+            stamp, w - 220.0, 55.0,
+            f'Throttle: {self.cmd_throttle:.2f}  Brake: {self.cmd_brake:.2f}', 17.0,
+            0.4, 1.0, 0.4, 1.0))
+        ann.texts.append(self._text_annotation(
+            stamp, w - 220.0, 75.0,
+            f'Steer: {self.cmd_steer:+.3f} rad', 17.0,
+            1.0, 0.65, 0.0, 1.0))
 
         return ann
 

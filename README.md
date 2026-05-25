@@ -75,7 +75,8 @@ docker build -t deteccion_seguimiento_carril docker/
 Con CARLA ya corriendo, levantar el bridge y el sistema de navegación en un solo comando desde la raíz del repositorio:
 
 ```bash
-docker compose -f tools/docker-compose-carla.yaml up
+xhost +local:docker
+docker compose -f tools/docker-compose.yaml up
 ```
 
 Esto arranca tres contenedores en paralelo:
@@ -89,9 +90,9 @@ Esto arranca tres contenedores en paralelo:
 Para lanzarlos en terminales separadas y ver los logs independientemente:
 
 ```bash
-docker compose -f tools/docker-compose-carla.yaml up ros_bridge
-docker compose -f tools/docker-compose-carla.yaml up navegacion
-docker compose -f tools/docker-compose-carla.yaml up foxglove
+docker compose -f tools/docker-compose.yaml up ros_bridge
+docker compose -f tools/docker-compose.yaml up navegacion
+docker compose -f tools/docker-compose.yaml up foxglove
 ```
 
 ### Ejecutar comandos en los contenedores
@@ -133,7 +134,7 @@ El layout carga dos paneles de imagen:
 
 El paquete incluye un nodo de recolección que funciona en modo conducción manual (sin `vehicle_control_node`). Controla el vehículo con `W/A/S/D` desde CARLA (`B` para activar el modo manual).
 
-El nodo usa la **segmentación semántica de CARLA** como ground truth perfecto.
+Usa la **segmentación semántica de CARLA** como ground truth perfecto.
 
 ```bash
 xhost +local:docker

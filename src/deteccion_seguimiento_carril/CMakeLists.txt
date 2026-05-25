@@ -13,7 +13,6 @@ install(
     scripts/vehicle_control_node.py
     scripts/lane_detection_node.py
     scripts/annotation_generator_node.py
-    scripts/lane_events.py
     scripts/lane_dataset_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
