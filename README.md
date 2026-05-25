@@ -1,19 +1,14 @@
-# Detección de cambio de carril y seguimiento
+# Detección de carril y seguimiento
 
-Repositorio para el trabajo de la asignatura **Control en Vehículos** del **MIERA** de la **Universidad de Sevilla**.
+Repositorio para el trabajo de la asignatura **Control en Vehículos** del **MIERA** — Universidad de Sevilla.
 
-## Idea del proyecto
+## Descripción
 
-El objetivo es desarrollar un sistema de percepción y control básico para un vehículo autónomo simulado en **CARLA Simulator**, conectado mediante **ROS2 Humble**.
+Sistema de percepción y control para un vehículo autónomo simulado en **CARLA Simulator** con **ROS2 Humble**:
 
-El flujo previsto es:
-
-1. Preprocesamiento de imagen y detección de líneas de carril mediante transformada de Hough.
-2. Estimación del error lateral o `cross-track error`.
-3. Control en cascada:
-   - Bucle externo de visión para calcular la referencia de `yaw rate`.
-   - Bucle interno para seguimiento de `yaw rate`.
-4. Validación del seguimiento de carril en un entorno simulado en CARLA.
+1. Detección de líneas de carril mediante transformada de Hough (OpenCV).
+2. Estimación del error lateral (`cross-track error`) y conversión a metros usando los intrínsecos de cámara.
+3. Control PID en cascada: bucle de velocidad (crucero) + bucle de dirección (mantenimiento de carril).
 
 ## Equipo
 
@@ -21,11 +16,26 @@ El flujo previsto es:
 - Rafael Muñoz
 - José Francisco López
 
+## Estructura del paquete
+
+```
+src/deteccion_seguimiento_carril/
+├── config/
+│   └── params.yaml                  # Parámetros de todos los nodos
+├── launch/
+│   ├── run.launch.py                # Lanzamiento principal
+│   └── lane_dataset.launch.py       # Recolección de dataset
+└── scripts/
+    ├── lane_detection.py            # Librería de detección (Hough + OpenCV)
+    ├── lane_detection_node.py       # Nodo ROS2: imagen → error lateral
+    ├── vehicle_control_node.py      # Nodo ROS2: error lateral → control PID
+    ├── annotation_generator_node.py # Nodo ROS2: anotaciones visuales para Foxglove
+    └── lane_dataset_node.py         # Nodo ROS2: recolección de dataset con ground truth semántico
+```
+
 ## Instalación
 
-### Instalar CARLA Simulator con Docker
-
-Instalar NVIDIA Container Toolkit:
+### NVIDIA Container Toolkit
 
 ```bash
 sudo apt-get install -y nvidia-container-toolkit
@@ -33,61 +43,49 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
 
-Descargar y ejecutar CARLA Simulator:
+### CARLA Simulator
 
 ```bash
-# Descargar la imagen de CARLA 0.9.15
 docker pull carlasim/carla:0.9.15
 
-# Ejecutar CARLA
+# Con ventana
 xhost +local:docker
 docker run --rm --privileged --gpus all --net=host \
-  -e DISPLAY=$DISPLAY \
-  -e XDG_RUNTIME_DIR=/tmp/runtime-carla \
+  -e DISPLAY=$DISPLAY -e XDG_RUNTIME_DIR=/tmp/runtime-carla \
   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-  --user $(id -u):$(id -g) \
-  --workdir /home/carla \
+  --user $(id -u):$(id -g) --workdir /home/carla \
   -it carlasim/carla:0.9.15 \
   ./CarlaUE4.sh -windowed -carla-rpc-port=2001 -nosound
 
-# Ejecutar CARLA en modo headless
+# Headless
 docker run --rm --privileged --gpus all --net=host \
-  --user $(id -u):$(id -g) \
-  --workdir /home/carla \
+  --user $(id -u):$(id -g) --workdir /home/carla \
   -it carlasim/carla:0.9.15 \
   ./CarlaUE4.sh -RenderOffScreen -carla-rpc-port=2001 -nosound
 ```
 
-Más info: [Guía de instalación de CARLA con Docker](https://medium.com/aimonks/downloading-carla-simulator-with-docker-on-ubuntu-22-04-in-2025-220904de2942)
-
-## Puesta en marcha
-
-### Construir la imagen del contenedor ROS2
-
-Desde la raíz del repositorio:
+### Imagen Docker del proyecto
 
 ```bash
 docker build -t deteccion_seguimiento_carril docker/
 ```
 
-### Lanzar con Docker Compose
+## Puesta en marcha
 
-Con CARLA ya corriendo, levantar el bridge y el sistema de navegación en un solo comando desde la raíz del repositorio:
+Con CARLA corriendo, lanzar todos los servicios desde la raíz del repositorio:
 
 ```bash
 xhost +local:docker
 docker compose -f tools/docker-compose.yaml up
 ```
 
-Esto arranca tres contenedores en paralelo:
-
 | Servicio | Contenedor | Descripción |
 |---|---|---|
 | `ros_bridge` | `carla_ros_bridge` | Bridge CARLA → ROS2 + spawn del ego-vehicle |
-| `navegacion` | `deteccion_seguimiento_carril` | Compila y lanza el paquete del proyecto |
-| `foxglove` | `foxglove_bridge` | WebSocket bridge en `ws://localhost:8765` para Foxglove Studio |
+| `navegacion` | `deteccion_seguimiento_carril` | Compila y lanza `run.launch.py` |
+| `foxglove` | `foxglove_bridge` | WebSocket en `ws://localhost:8765` para Foxglove Studio |
 
-Para lanzarlos en terminales separadas y ver los logs independientemente:
+Para lanzar servicios por separado:
 
 ```bash
 docker compose -f tools/docker-compose.yaml up ros_bridge
@@ -95,9 +93,7 @@ docker compose -f tools/docker-compose.yaml up navegacion
 docker compose -f tools/docker-compose.yaml up foxglove
 ```
 
-### Ejecutar comandos en los contenedores
-
-Abrir una shell interactiva en cualquiera de los tres contenedores en ejecución:
+Shell interactiva en un contenedor:
 
 ```bash
 docker exec -it carla_ros_bridge bash
@@ -105,46 +101,28 @@ docker exec -it deteccion_seguimiento_carril bash
 docker exec -it foxglove_bridge bash
 ```
 
-### Visualización con Foxglove Studio
+## Visualización con Foxglove Studio
 
-Foxglove Studio es una alternativa a rviz2 que corre en el **host** (o en el navegador) y se conecta al contenedor sin necesidad de reenvío X11.
+1. Abre [Foxglove Studio](https://studio.foxglove.dev) (navegador o app).
+2. **Open connection → Foxglove WebSocket** → `ws://172.17.0.1:8765`
+3. **View → Import layout from file** → selecciona `tools/foxglove.json`
 
-#### Conexión
-
-1. Abre [Foxglove Studio](https://studio.foxglove.dev) en el navegador o la app de escritorio.
-2. Selecciona **Open connection → Foxglove WebSocket**.
-3. Introduce la URL:
-   ```
-   ws://172.17.0.1:8765
-   ```
-   > `172.17.0.1` es la IP del host desde dentro de la red Docker bridge. El puerto `8765` es el que expone el servicio `foxglove_bridge` del compose.
-
-#### Importar layout
-
-Para cargar el layout predefinido con las dos cámaras (`rgb_view` y `rgb_front`):
-
-1. En Foxglove Studio, ve a **View → Import layout from file** (o el icono de layout en la barra lateral).
-2. Selecciona el fichero `tools/foxglove.json` de este repositorio.
-
-El layout carga dos paneles de imagen:
-- **Izquierda**: `/carla/ego_vehicle/rgb_view/image` — vista exterior del vehículo
-- **Derecha**: `/carla/ego_vehicle/rgb_front/image` — cámara frontal (detección de señales)
+El layout incluye:
+- **Izquierda**: `/carla/ego_vehicle/rgb_view/image` — vista exterior
+- **Derecha**: `/carla/ego_vehicle/rgb_front/image` — cámara frontal con anotaciones
 
 ## Generación de Dataset
 
-El paquete incluye un nodo de recolección que funciona en modo conducción manual (sin `vehicle_control_node`). Controla el vehículo con `W/A/S/D` desde CARLA (`B` para activar el modo manual).
-
-Usa la **segmentación semántica de CARLA** como ground truth perfecto.
+Recolección de imágenes con ground truth semántico de CARLA en modo conducción manual (`W/A/S/D`, activar con `B`):
 
 ```bash
 xhost +local:docker
 docker compose -f tools/docker-compose-lane-dataset.yaml up
 ```
 
-- **Nodo**: `lane_dataset_node` — detecta marcas viales en la máscara semántica, la remap al espacio RGB y guarda imagen RGB + máscara binaria de ground truth.
-- **Salida**: `dataset/lanes/images/` y `dataset/lanes/masks/`
+- **Salida**: `dataset/lanes/images/` (RGB) y `dataset/lanes/masks/` (máscaras binarias)
 
-### Visualización
+### Visualización del dataset
 
 ```bash
 python3 tools/visualize_lanes_dataset.py dataset/lanes
@@ -152,7 +130,7 @@ python3 tools/visualize_lanes_dataset.py dataset/lanes --slideshow --delay 1000
 python3 tools/visualize_lanes_dataset.py dataset/lanes --output dataset/lanes/visualized
 ```
 
-**Ejecutar en Docker:**
+En Docker:
 
 ```bash
 xhost +local:docker

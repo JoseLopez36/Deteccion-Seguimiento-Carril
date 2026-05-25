@@ -27,7 +27,6 @@ class VehicleControlNode(Node):
         self.declare_parameter('control_rate', 20.0)
         self.declare_parameter('target_speed', 5.0)          # m/s
         self.declare_parameter('max_steer', 1.0)               # normalizado CARLA [-1, 1]
-        self.declare_parameter('steer_alpha', 0.15)              # suavizado EMA: 0=máx.suave 1=sin filtro
         self.declare_parameter('kp_throttle', 0.3)
         self.declare_parameter('ki_throttle', 0.01)
         self.declare_parameter('kd_throttle', 0.05)
@@ -41,7 +40,6 @@ class VehicleControlNode(Node):
         self.control_rate         = float(self.get_parameter('control_rate').value)
         self.target_speed         = float(self.get_parameter('target_speed').value)
         self.max_steer            = float(self.get_parameter('max_steer').value)
-        self.steer_alpha          = float(self.get_parameter('steer_alpha').value)
         self.kp_throttle          = float(self.get_parameter('kp_throttle').value)
         self.ki_throttle          = float(self.get_parameter('ki_throttle').value)
         self.kd_throttle          = float(self.get_parameter('kd_throttle').value)
@@ -78,7 +76,6 @@ class VehicleControlNode(Node):
         # --- Estado PID dirección ---
         self._steering_integral  = 0.0
         self._steering_prev_err  = 0.0
-        self._steer_filtered     = 0.0  # salida suavizada con EMA
 
         self._prev_time = self.get_clock().now()
 
@@ -183,12 +180,7 @@ class VehicleControlNode(Node):
                   + self.ki_steering * self._steering_integral
                   + self.kd_steering * derivative)
 
-        raw = float(max(-self.max_steer, min(self.max_steer, output)))
-
-        # Filtro de media móvil exponencial (EMA) para suavizar el zigzag
-        self._steer_filtered = (self.steer_alpha * raw
-                                + (1.0 - self.steer_alpha) * self._steer_filtered)
-        return self._steer_filtered
+        return float(max(-self.max_steer, min(self.max_steer, output)))
 
 
 def main(args=None):

@@ -1,37 +1,5 @@
-"""
-╔══════════════════════════════════════════════════════════════╗
-║         LANE EVENTS  —  Módulo de salidas del detector       ║
-║         Importa esto desde tu script de control              ║
-╚══════════════════════════════════════════════════════════════╝
-
-USO BÁSICO (en tu control):
-
-    from lane_events import LaneDetector, LaneEvent
-
-    def mi_callback(event):
-        if event.type == LaneEvent.CROSSED_LEFT:
-            # girar derecha para volver al carril
-            pass
-
-    detector = LaneDetector(source=0, on_event=mi_callback)
-    detector.start()          # arranca en hilo separado
-    ...
-    detector.stop()
-
-USO AVANZADO (polling desde tu loop):
-
-    detector = LaneDetector(source=0)
-    detector.start()
-
-    while True:
-        state  = detector.get_state()    # estado continuo actual
-        events = detector.get_events()   # lista de eventos nuevos (vacía si no hay)
-        ...
-"""
-
 import cv2
 import numpy as np
-import math
 import threading
 import time
 from collections import deque
@@ -418,46 +386,3 @@ class LaneDetector:
 
         return out
 
-
-# ══════════════════════════════════════════════
-# DEMO STANDALONE
-# ══════════════════════════════════════════════
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source", default="0")
-    args = parser.parse_args()
-
-    try:
-        src = int(args.source)
-    except ValueError:
-        src = args.source
-
-    print("╔══════════════════════════════════════╗")
-    print("║  LANE EVENTS — demo de salidas       ║")
-    print("╚══════════════════════════════════════╝")
-    print("Eventos que se emitirán:")
-    print(f"  {LaneEvent.CROSSED_LEFT:<16} → cruzó línea izquierda")
-    print(f"  {LaneEvent.CROSSED_RIGHT:<16} → cruzó línea derecha")
-    print(f"  {LaneEvent.ZONE_CHANGED:<16} → cambió de zona")
-    print(f"  {LaneEvent.LANE_LOST:<16} → perdió el carril")
-    print(f"  {LaneEvent.LANE_FOUND:<16} → recuperó el carril")
-    print("\nQ / ESC para salir\n")
-
-    def on_event(ev: Event):
-        # Aquí recibirías el evento en tu sistema de control
-        print(f"  ▶ {ev}")
-
-    det = LaneDetector(source=src, on_event=on_event, show_window=True)
-    det.start()
-
-    try:
-        while det._running:
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        det.stop()
-        print("\n[Detector detenido]")

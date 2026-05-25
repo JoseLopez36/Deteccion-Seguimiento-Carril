@@ -39,13 +39,11 @@ class LaneDetectionNode(Node):
         self.declare_parameter('camera_info_topic', '/carla/ego_vehicle/rgb_front/camera_info')
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
         self.declare_parameter('lane_state_topic', '/lane_detection/lane_state')
-        self.declare_parameter('lane_error_alpha', 0.2)  # EMA: 0=máx.suave, 1=sin filtro
 
         self.image_topic        = self.get_parameter('image_topic').value
         self.camera_info_topic  = self.get_parameter('camera_info_topic').value
         self.lane_error_topic   = self.get_parameter('lane_error_topic').value
         self.lane_state_topic   = self.get_parameter('lane_state_topic').value
-        self.lane_error_alpha   = float(self.get_parameter('lane_error_alpha').value)
 
         # --- QoS ---
         sensor_qos = QoSProfile(
@@ -64,10 +62,7 @@ class LaneDetectionNode(Node):
         # --- Intrínsecos de la cámara (se rellenan al recibir camera_info) ---
         self._fx = None  # focal length en píxeles; None hasta recibir camera_info
 
-        # --- Suavizado EMA del error lateral ---
-        self._offset_filtered_px = 0.0  # estado del filtro en píxeles
-
-        # --- Detector de carril (OpenCV/Hough, sin TensorFlow) ---
+        # --- Detector de carril (OpenCV/Hough) ---
         self.bridge   = CvBridge()
         self._detector = LaneDetector(show_window=False)
 
@@ -113,12 +108,7 @@ class LaneDetectionNode(Node):
             left, right = self._detector._detect(frame, h, w)
             lane_state  = self._detector._analyze(w, left, right, fps=0.0)
 
-            raw_offset_px = float(lane_state.offset_px)
-
-            # Filtro EMA sobre el offset en píxeles para suavizar ruido del detector
-            self._offset_filtered_px = (self.lane_error_alpha * raw_offset_px
-                                        + (1.0 - self.lane_error_alpha) * self._offset_filtered_px)
-            lateral_error_px = self._offset_filtered_px
+            lateral_error_px = float(lane_state.offset_px)
 
             # Convertir a metros si ya se recibió camera_info
             if self._fx is not None and self._fx > 0.0:
