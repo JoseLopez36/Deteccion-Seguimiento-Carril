@@ -6,11 +6,17 @@ vehicle_control_node:
     kp_throttle: 0.3            # P sobre error de velocidad
     ki_throttle: 0.05           # I sobre error de velocidad
 
-    # Parámetros de control (30 km/h)
-    target_speed: 8.33          # m/s (30 km/h)
+    # Parámetros de control (18 km/h)
+    target_speed: 5.0           # m/s (18 km/h)
     kp_steering: 0.132          # [rad/m]
     ki_steering: 0.0006         # [rad/(m·s)]
     kd_steering: -2.4e-05       # [rad·s/m]
+
+    # Parámetros de control (30 km/h)
+    # target_speed: 8.33          # m/s (30 km/h)
+    # kp_steering: 0.132          # [rad/m]
+    # ki_steering: 0.0006         # [rad/(m·s)]
+    # kd_steering: -2.4e-05       # [rad·s/m]
 
     lane_error_topic: /lane_detection/lane_error
     speedometer_topic: /carla/ego_vehicle/speedometer

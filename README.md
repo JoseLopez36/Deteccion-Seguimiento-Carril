@@ -111,6 +111,49 @@ El layout incluye:
 - **Izquierda**: `/carla/ego_vehicle/rgb_view/image` — vista exterior
 - **Derecha**: `/carla/ego_vehicle/rgb_front/image` — cámara frontal con anotaciones
 
+## Grabación de rosbag (.mcap)
+
+Usar `tools/docker-compose-record.yaml`, que añade el servicio `record` al stack normal:
+
+```bash
+mkdir -p bags
+xhost +local:docker
+docker compose -f tools/docker-compose-record.yaml up
+```
+
+El bag se guarda en `bags/sesion/` en el host (montado como volumen). Para usar un nombre personalizado:
+
+```bash
+BAG_NAME=prueba_01 docker compose -f tools/docker-compose-record.yaml up
+```
+
+Para detener la grabación sin parar el resto de servicios:
+
+```bash
+docker stop rosbag_record
+```
+
+Topics grabados:
+
+| Topic | Descripción |
+|---|---|
+| `/carla/ego_vehicle/rgb_view/image` | Vista exterior |
+| `/carla/ego_vehicle/rgb_view/camera_info` | Intrínsecos cámara exterior |
+| `/carla/ego_vehicle/rgb_front/image` | Cámara frontal |
+| `/carla/ego_vehicle/rgb_front/camera_info` | Intrínsecos cámara frontal |
+| `/foxglove/annotations` | Anotaciones visuales |
+| `/lane_detection/lane_error` | Error lateral en metros |
+| `/lane_detection/lane_state` | Estado del carril (JSON) |
+| `/carla/ego_vehicle/speedometer` | Velocidad actual |
+| `/carla/ego_vehicle/vehicle_control_cmd` | Comandos de control |
+
+### Reproducción en Foxglove Studio
+
+1. Abre [Foxglove Studio](https://studio.foxglove.dev).
+2. **Open local file** → selecciona `bags/sesion/sesion_0.mcap`.
+3. **View → Import layout from file** → selecciona `tools/foxglove.json`.
+4. Usa la barra de reproducción para navegar por la grabación.
+
 ## Generación de Dataset
 
 Recolección de imágenes con ground truth semántico de CARLA en modo conducción manual (`W/A/S/D`, activar con `B`):

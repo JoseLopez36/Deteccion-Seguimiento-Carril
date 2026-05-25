@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-rviz2 \
     ros-${ROS_DISTRO}-foxglove-bridge \
     ros-${ROS_DISTRO}-foxglove-msgs \
+    ros-${ROS_DISTRO}-rosbag2-storage-mcap \
     # carla-ros-bridge runtime deps
     ros-${ROS_DISTRO}-ackermann-msgs \
     ros-${ROS_DISTRO}-derived-object-msgs \
