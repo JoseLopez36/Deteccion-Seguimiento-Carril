@@ -13,7 +13,7 @@ class VehicleControlNode(Node):
     Nodo de control del vehículo.
 
     Suscripciones:
-      - /lane_detection/lane_error          (std_msgs/Float32)              — error lateral en píxeles
+      - /lane_detection/lane_error          (std_msgs/Float32)              — error lateral en metros
       - /carla/ego_vehicle/speedometer      (std_msgs/Float32)
 
     Publicaciones:
@@ -26,7 +26,8 @@ class VehicleControlNode(Node):
         # --- Parámetros ---
         self.declare_parameter('control_rate', 20.0)
         self.declare_parameter('target_speed', 5.0)          # m/s
-        self.declare_parameter('max_steering_angle', 0.5)    # rad
+        self.declare_parameter('max_steer', 1.0)               # normalizado CARLA [-1, 1]
+        self.declare_parameter('steer_alpha', 0.15)              # suavizado EMA: 0=máx.suave 1=sin filtro
         self.declare_parameter('kp_throttle', 0.3)
         self.declare_parameter('ki_throttle', 0.01)
         self.declare_parameter('kd_throttle', 0.05)
@@ -39,7 +40,8 @@ class VehicleControlNode(Node):
 
         self.control_rate         = float(self.get_parameter('control_rate').value)
         self.target_speed         = float(self.get_parameter('target_speed').value)
-        self.max_steering_angle   = float(self.get_parameter('max_steering_angle').value)
+        self.max_steer            = float(self.get_parameter('max_steer').value)
+        self.steer_alpha          = float(self.get_parameter('steer_alpha').value)
         self.kp_throttle          = float(self.get_parameter('kp_throttle').value)
         self.ki_throttle          = float(self.get_parameter('ki_throttle').value)
         self.kd_throttle          = float(self.get_parameter('kd_throttle').value)
@@ -76,6 +78,7 @@ class VehicleControlNode(Node):
         # --- Estado PID dirección ---
         self._steering_integral  = 0.0
         self._steering_prev_err  = 0.0
+        self._steer_filtered     = 0.0  # salida suavizada con EMA
 
         self._prev_time = self.get_clock().now()
 
@@ -130,7 +133,7 @@ class VehicleControlNode(Node):
         self.get_logger().info(
             f'speed={self.current_speed:.2f}m/s  target={self.speed_limit:.1f}m/s  '
             f'throttle={throttle:.2f}  brake={brake:.2f}  '
-            f'steer={steering:+.3f}rad  lane_err={self.lane_error:+.1f}px',
+            f'steer={steering:+.3f}  lane_err={self.lane_error:+.4f}m',
             throttle_duration_sec=1.0,
         )
 
@@ -162,17 +165,17 @@ class VehicleControlNode(Node):
         return throttle, brake
 
     def _keep_lane(self, dt: float) -> float:
-        """PID de mantenimiento de carril. Devuelve steering en [-max, +max]
+        """PID de mantenimiento de carril. Devuelve steer en [-1, 1] (CARLA).
 
-        offset_px = cx - lane_center:
-          > 0  → carril a la izquierda del frame → girar izquierda (steering < 0)
-          < 0  → carril a la derecha del frame  → girar derecha   (steering > 0)
+        lane_error en metros (publicado por lane_detection_node):
+          > 0  → vehículo desplazado a la derecha del centro → girar izquierda (steer < 0)
+          < 0  → vehículo desplazado a la izquierda del centro → girar derecha  (steer > 0)
         Se niega el error para que el signo del PID sea correcto.
         """
-        error = -self.lane_error  # negado: offset_px positivo → steering negativo
+        error = -self.lane_error  # negado: error positivo → steer negativo (izquierda)
 
         self._steering_integral += error * dt
-        self._steering_integral  = max(-500.0, min(500.0, self._steering_integral))  # anti-windup
+        self._steering_integral  = max(-10.0, min(10.0, self._steering_integral))  # anti-windup
         derivative = (error - self._steering_prev_err) / dt
         self._steering_prev_err = error
 
@@ -180,7 +183,12 @@ class VehicleControlNode(Node):
                   + self.ki_steering * self._steering_integral
                   + self.kd_steering * derivative)
 
-        return float(max(-self.max_steering_angle, min(self.max_steering_angle, output)))
+        raw = float(max(-self.max_steer, min(self.max_steer, output)))
+
+        # Filtro de media móvil exponencial (EMA) para suavizar el zigzag
+        self._steer_filtered = (self.steer_alpha * raw
+                                + (1.0 - self.steer_alpha) * self._steer_filtered)
+        return self._steer_filtered
 
 
 def main(args=None):

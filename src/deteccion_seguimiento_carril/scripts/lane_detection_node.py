@@ -10,25 +10,24 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 
 from cv_bridge import CvBridge
 
-import cv2
 import json
 
 from std_msgs.msg import Float32, String
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 
-import lane_detection as ld
-import numpy as np
+from lane_detection import LaneDetector
 
 
 class LaneDetectionNode(Node):
     """
-    Nodo de detección de carriles mediante modelo de segmentación (VGG/U-Net).
+    Nodo de detección de carriles mediante visión clásica (Hough + OpenCV).
 
     Suscripciones:
-      - /carla/ego_vehicle/rgb_front/image (sensor_msgs/Image)
+      - /carla/ego_vehicle/rgb_front/image       (sensor_msgs/Image)
+      - /carla/ego_vehicle/rgb_front/camera_info (sensor_msgs/CameraInfo)
 
     Publicaciones:
-      - /lane_detection/lane_error      (std_msgs/Float32)  — error lateral en píxeles
+      - /lane_detection/lane_error      (std_msgs/Float32)  — error lateral en metros
       - /lane_detection/lane_state      (std_msgs/String)   — JSON con estado del carril
     """
 
@@ -37,14 +36,16 @@ class LaneDetectionNode(Node):
 
         # --- Parámetros ---
         self.declare_parameter('image_topic', '/carla/ego_vehicle/rgb_front/image')
+        self.declare_parameter('camera_info_topic', '/carla/ego_vehicle/rgb_front/camera_info')
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
         self.declare_parameter('lane_state_topic', '/lane_detection/lane_state')
-        self.declare_parameter('model_path', '/home/ros/workspace/src/deteccion_seguimiento_carril/models/model_VGG.keras')
+        self.declare_parameter('lane_error_alpha', 0.2)  # EMA: 0=máx.suave, 1=sin filtro
 
-        self.image_topic       = self.get_parameter('image_topic').value
-        self.lane_error_topic  = self.get_parameter('lane_error_topic').value
-        self.lane_state_topic  = self.get_parameter('lane_state_topic').value
-        self.model_path        = self.get_parameter('model_path').value
+        self.image_topic        = self.get_parameter('image_topic').value
+        self.camera_info_topic  = self.get_parameter('camera_info_topic').value
+        self.lane_error_topic   = self.get_parameter('lane_error_topic').value
+        self.lane_state_topic   = self.get_parameter('lane_state_topic').value
+        self.lane_error_alpha   = float(self.get_parameter('lane_error_alpha').value)
 
         # --- QoS ---
         sensor_qos = QoSProfile(
@@ -60,9 +61,15 @@ class LaneDetectionNode(Node):
             depth=10,
         )
 
-        # --- Utilidades ---
-        self.bridge = CvBridge()
-        self.model = ld.load_model(self.model_path)
+        # --- Intrínsecos de la cámara (se rellenan al recibir camera_info) ---
+        self._fx = None  # focal length en píxeles; None hasta recibir camera_info
+
+        # --- Suavizado EMA del error lateral ---
+        self._offset_filtered_px = 0.0  # estado del filtro en píxeles
+
+        # --- Detector de carril (OpenCV/Hough, sin TensorFlow) ---
+        self.bridge   = CvBridge()
+        self._detector = LaneDetector(show_window=False)
 
         # --- Publicadores ---
         self.error_pub = self.create_publisher(Float32, self.lane_error_topic, reliable_qos)
@@ -70,6 +77,7 @@ class LaneDetectionNode(Node):
 
         # --- Suscriptores ---
         self.create_subscription(Image, self.image_topic, self._on_image, sensor_qos)
+        self.create_subscription(CameraInfo, self.camera_info_topic, self._on_camera_info, sensor_qos)
 
         self._last_status_time = 0.0
         self._last_image_time = self.get_clock().now().nanoseconds / 1e9
@@ -79,6 +87,11 @@ class LaneDetectionNode(Node):
     # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
+
+    def _on_camera_info(self, msg: CameraInfo):
+        if self._fx is None:
+            self._fx = msg.k[0]  # K = [fx, 0, cx, 0, fy, cy, 0, 0, 1]
+            self.get_logger().info(f'camera_info recibido: fx={self._fx:.2f} px')
 
     def _watchdog_timer(self):
         now = self.get_clock().now().nanoseconds / 1e9
@@ -97,154 +110,57 @@ class LaneDetectionNode(Node):
             h, w = frame.shape[:2]
             self.get_logger().debug(f'Frame: {w}x{h}')
 
-            lane_state = self._detect_lane(frame)
-            lateral_error = lane_state.get('offset_px', 0.0)
+            left, right = self._detector._detect(frame, h, w)
+            lane_state  = self._detector._analyze(w, left, right, fps=0.0)
+
+            raw_offset_px = float(lane_state.offset_px)
+
+            # Filtro EMA sobre el offset en píxeles para suavizar ruido del detector
+            self._offset_filtered_px = (self.lane_error_alpha * raw_offset_px
+                                        + (1.0 - self.lane_error_alpha) * self._offset_filtered_px)
+            lateral_error_px = self._offset_filtered_px
+
+            # Convertir a metros si ya se recibió camera_info
+            if self._fx is not None and self._fx > 0.0:
+                lateral_error_m = lateral_error_px / self._fx
+            else:
+                lateral_error_m = lateral_error_px  # fallback hasta recibir camera_info
 
             error_msg = Float32()
-            error_msg.data = float(lateral_error)
+            error_msg.data = float(lateral_error_m)
             self.error_pub.publish(error_msg)
-            self.get_logger().debug(f'Published lane_error: {lateral_error}')
+            self.get_logger().debug(f'Published lane_error: {lateral_error_m:.4f}m (raw: {lateral_error_px:.1f}px)')
 
+            state_dict = {
+                'zone':           lane_state.zone,
+                'lateral':        lane_state.lateral,
+                'offset_px':      lateral_error_px,
+                'lane_width_px':  lane_state.lane_width_px,
+                'left_detected':  lane_state.left_detected,
+                'right_detected': lane_state.right_detected,
+                'left':           list(left)  if left  else None,
+                'right':          list(right) if right else None,
+                'image_width':    w,
+                'image_height':   h,
+            }
             state_msg = String()
-            state_msg.data = json.dumps(lane_state)
+            state_msg.data = json.dumps(state_dict)
             self.state_pub.publish(state_msg)
-            self.get_logger().debug(f'Published lane_state: {state_msg.data[:100]}...')
+            self.get_logger().debug(f'Published lane_state: {state_msg.data}')
 
             now = self.get_clock().now().nanoseconds / 1e9
             if now - self._last_status_time >= 2.0:
                 self._last_status_time = now
+                fx_str = f'{self._fx:.1f}' if self._fx else 'N/A'
                 self.get_logger().info(
-                    f'Lane error: {lateral_error:+.1f}px  '
-                    f"detected L:{int(lane_state.get('left_detected', False))} "
-                    f"R:{int(lane_state.get('right_detected', False))}"
+                    f'Lane error: {lateral_error_px:+.1f}px → {lateral_error_m:+.4f}m  '
+                    f'(fx={fx_str})  '
+                    f'L:{int(lane_state.left_detected)} R:{int(lane_state.right_detected)}  '
+                    f'zona={lane_state.zone}'
                 )
         except Exception as e:
             self.get_logger().error(f'Error in _on_image: {e}')
 
-    # ------------------------------------------------------------------
-    # Lógica de detección
-    # ------------------------------------------------------------------
-
-    def _detect_lane(self, frame):
-        """
-        Detecta líneas de carril y devuelve diccionario con estado completo.
-        """
-        h, w = frame.shape[:2]
-
-        # Preprocesamiento y predicción
-        preprocessed = ld.preprocess_frame(frame)
-        pred_mask = ld.predict_lane(preprocessed, self.model)
-        mask = ld.mask_to_array(pred_mask)
-
-        # El modelo devuelve máscara a 224×224; reescalar a dims originales
-        mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-
-        # Diagnóstico: estadísticas de la máscara cruda
-        pos = int(np.sum(mask > 0.5))
-        self.get_logger().debug(
-            f'Mask stats — min: {mask.min():.3f}, max: {mask.max():.3f}, '
-            f'mean: {mask.mean():.3f}, pos_px: {pos}'
-        )
-
-        # Cálculo manual del error lateral en píxeles (centro del carril vs centro de imagen)
-        binary = (mask > 0.5).astype(np.uint8)
-        roi_start = int(h * 0.5)
-        roi = binary[roi_start:, :]
-        active = np.column_stack(np.where(roi > 0))
-        if len(active) > 0:
-            lane_center_x = np.mean(active[:, 1])
-            lateral_error_px = float(lane_center_x - w / 2.0)
-        else:
-            lateral_error_px = 0.0
-
-        lane_cx = float(lane_center_x) if len(active) > 0 else w / 2.0
-        left_line, right_line, left_detected, right_detected = \
-            self._extract_lane_lines(mask, w, h, lane_center_x=lane_cx)
-
-        zone = 'CENTER'
-        if lateral_error_px < -30.0:
-            zone = 'LEFT'
-        elif lateral_error_px > 30.0:
-            zone = 'RIGHT'
-
-        self.get_logger().debug(
-            f'Lane center x: {lane_cx:.1f}, error_px: {lateral_error_px:.1f}'
-        )
-
-        return {
-            'left': left_line,
-            'right': right_line,
-            'left_detected': left_detected,
-            'right_detected': right_detected,
-            'image_width': w,
-            'image_height': h,
-            'zone': zone,
-            'lateral': float(np.clip(lateral_error_px / (w / 2.0), -1.0, 1.0)),
-            'offset_px': lateral_error_px
-        }
-
-    def _extract_lane_lines(self, mask, img_w, img_h, lane_center_x=None, threshold=0.5):
-        """
-        Extrae coordenadas de líneas izquierda y derecha desde la máscara.
-        Usa el centro del carril para dividir y toma los píxeles de borde
-        extremos; ajusta una recta por mínimos cuadrados.
-        Retorna: ([x_bot, y_bot, x_top, y_top], [...], left_ok, right_ok)
-        """
-        binary = (mask > threshold).astype(np.uint8)
-        roi_start = int(img_h * 0.5)
-        roi = binary[roi_start:, :]
-
-        h_roi, w_roi = roi.shape
-        if h_roi == 0 or w_roi == 0:
-            return None, None, False, False
-
-        # Centro del carril: el proporcionado o el centro de la imagen
-        if lane_center_x is None:
-            all_active = np.column_stack(np.where(roi > 0))
-            lane_cx = int(np.mean(all_active[:, 1])) if len(all_active) > 0 else w_roi // 2
-        else:
-            lane_cx = int(lane_center_x)
-
-        # Muestreo fino de filas (de abajo hacia arriba)
-        y_positions = np.linspace(h_roi - 1, max(1, h_roi * 0.2), 20, dtype=int)
-
-        left_pts = []   # [(x, y_abs), ...]
-        right_pts = []
-
-        for y in y_positions:
-            row = roi[y, :]
-            active = np.where(row > 0)[0]
-            if len(active) == 0:
-                continue
-
-            left_active = active[active < lane_cx]
-            right_active = active[active >= lane_cx]
-
-            if len(left_active) > 0:
-                # Borde derecho de la parte izquierda → límite izquierdo del carril
-                left_pts.append([float(left_active[-1]), float(roi_start + y)])
-            if len(right_active) > 0:
-                # Borde izquierdo de la parte derecha → límite derecho del carril
-                right_pts.append([float(right_active[0]), float(roi_start + y)])
-
-        def _fit_line(pts):
-            if len(pts) < 3:
-                return None
-            pts = np.array(pts)
-            # x = m * y + b  (líneas aprox. verticales en la imagen)
-            A = np.vstack([pts[:, 1], np.ones(len(pts))]).T
-            m, b = np.linalg.lstsq(A, pts[:, 0], rcond=None)[0]
-
-            y_bot = float(img_h)
-            y_top = float(roi_start + h_roi * 0.2)
-            x_bot = float(np.clip(m * y_bot + b, 0.0, float(img_w)))
-            x_top = float(np.clip(m * y_top + b, 0.0, float(img_w)))
-            return [x_bot, y_bot, x_top, y_top]
-
-        left_line = _fit_line(left_pts)
-        right_line = _fit_line(right_pts)
-
-        return left_line, right_line, left_line is not None, right_line is not None
 
 
 def main(args=None):

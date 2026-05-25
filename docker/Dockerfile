@@ -51,11 +51,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-python-qt-binding \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Lane detection model dependencies ─────────────────────────────────────────
-RUN pip3 install --no-cache-dir \
-    "numpy==1.24.3" \
-    "tensorflow>=2.16,<2.19"
-
 # ── CARLA Python client ───────────────────────────────────────────────────────
 RUN pip3 install --no-cache-dir carla==0.9.15 transforms3d
 

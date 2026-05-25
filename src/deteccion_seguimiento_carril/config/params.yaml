@@ -2,10 +2,11 @@ vehicle_control_node:
   ros__parameters:
     control_rate: 20.0          # Hz
     target_speed: 5.0           # m/s (~18 km/h)
-    max_steering_angle: 0.5     # rad
-    kp_steering: 0.002          # P sobre error lateral en píxeles
-    ki_steering: 0.001          # I sobre error lateral en píxeles
-    kd_steering: -1.07e-05      # D sobre derivada del error lateral
+    max_steer: 1.0              # normalizado CARLA [-1, 1]
+    steer_alpha: 1.0           # suavizado EMA: 0=máx.suave, 1=sin filtro
+    kp_steering: 0.3            # P sobre error lateral en metros
+    ki_steering: 0.001          # I sobre error lateral en metros
+    kd_steering: -1.07e-05      # D sobre derivada del error lateral en metros
     kp_throttle: 0.3            # P sobre error de velocidad
     ki_throttle: 0.05           # I sobre error de velocidad
     max_integral: 1.0           # anti-windup del integrador
@@ -19,9 +20,10 @@ vehicle_control_node:
 lane_detection_node:
   ros__parameters:
     image_topic: /carla/ego_vehicle/rgb_front/image
+    camera_info_topic: /carla/ego_vehicle/rgb_front/camera_info
     lane_error_topic: /lane_detection/lane_error
     lane_state_topic: /lane_detection/lane_state
-    model_path: /home/ros/workspace/src/deteccion_seguimiento_carril/models/lane_model.keras
+    lane_error_alpha: 1.0     # EMA sobre offset_px: 0=máx.suave, 1=sin filtro
 
 annotation_generator_node:
   ros__parameters:

@@ -216,7 +216,8 @@ class AnnotationGeneratorNode(Node):
         deviation = self._points_annotation(
             stamp, PointsAnnotation.LINE_STRIP, 2.0,
             1.0, 1.0, 0.0, 1.0)
-        lane_center_x = cx - self.lane_error
+        offset_px = float(s.get('offset_px', 0.0))  # siempre en px, independiente de lane_error
+        lane_center_x = cx - offset_px
         deviation.points.extend([
             self._point2(cx, h * 0.7),
             self._point2(lane_center_x, h * 0.7)])
@@ -248,7 +249,7 @@ class AnnotationGeneratorNode(Node):
             0.4, 1.0, 0.4, 1.0))
         ann.texts.append(self._text_annotation(
             stamp, w - 220.0, 75.0,
-            f'Steer: {self.cmd_steer:+.3f} rad', 17.0,
+            f'Steer: {self.cmd_steer:+.3f}', 17.0,
             1.0, 0.65, 0.0, 1.0))
 
         return ann
