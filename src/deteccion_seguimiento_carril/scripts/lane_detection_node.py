@@ -15,7 +15,7 @@ import json
 from std_msgs.msg import Float32, String
 from sensor_msgs.msg import Image, CameraInfo
 
-from lane_detection import LaneDetector
+from lane_detection import LaneDetector, LaneConfig
 
 
 class LaneDetectionNode(Node):
@@ -34,7 +34,7 @@ class LaneDetectionNode(Node):
     def __init__(self):
         super().__init__('lane_detection_node')
 
-        # --- Parámetros ---
+        # --- Parámetros de tópicos ---
         self.declare_parameter('image_topic', '/carla/ego_vehicle/rgb_front/image')
         self.declare_parameter('camera_info_topic', '/carla/ego_vehicle/rgb_front/camera_info')
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
@@ -44,6 +44,31 @@ class LaneDetectionNode(Node):
         self.camera_info_topic  = self.get_parameter('camera_info_topic').value
         self.lane_error_topic   = self.get_parameter('lane_error_topic').value
         self.lane_state_topic   = self.get_parameter('lane_state_topic').value
+
+        # --- Parámetros del detector ---
+        self.declare_parameter('canny_low',        50)
+        self.declare_parameter('canny_high',       150)
+        self.declare_parameter('hough_rho',        2)
+        self.declare_parameter('hough_threshold',  50)
+        self.declare_parameter('hough_min_len',    40)
+        self.declare_parameter('hough_max_gap',    100)
+        self.declare_parameter('min_slope',        0.4)
+        self.declare_parameter('smoothing',        8)
+        self.declare_parameter('horizon',          0.58)
+        self.declare_parameter('center_threshold', 0.20)
+
+        cfg = LaneConfig(
+            canny_low        = int(self.get_parameter('canny_low').value),
+            canny_high       = int(self.get_parameter('canny_high').value),
+            hough_rho        = int(self.get_parameter('hough_rho').value),
+            hough_threshold  = int(self.get_parameter('hough_threshold').value),
+            hough_min_len    = int(self.get_parameter('hough_min_len').value),
+            hough_max_gap    = int(self.get_parameter('hough_max_gap').value),
+            min_slope        = float(self.get_parameter('min_slope').value),
+            smoothing        = int(self.get_parameter('smoothing').value),
+            horizon          = float(self.get_parameter('horizon').value),
+            center_threshold = float(self.get_parameter('center_threshold').value),
+        )
 
         # --- QoS ---
         sensor_qos = QoSProfile(
@@ -63,8 +88,8 @@ class LaneDetectionNode(Node):
         self._fx = None  # focal length en píxeles; None hasta recibir camera_info
 
         # --- Detector de carril (OpenCV/Hough) ---
-        self.bridge   = CvBridge()
-        self._detector = LaneDetector(show_window=False)
+        self.bridge    = CvBridge()
+        self._detector = LaneDetector(cfg=cfg)
 
         # --- Publicadores ---
         self.error_pub = self.create_publisher(Float32, self.lane_error_topic, reliable_qos)
@@ -74,9 +99,6 @@ class LaneDetectionNode(Node):
         self.create_subscription(Image, self.image_topic, self._on_image, sensor_qos)
         self.create_subscription(CameraInfo, self.camera_info_topic, self._on_camera_info, sensor_qos)
 
-        self._last_status_time = 0.0
-        self._last_image_time = self.get_clock().now().nanoseconds / 1e9
-        self.create_timer(2.0, self._watchdog_timer)
         self.get_logger().info('lane_detection_node iniciado.')
 
     # ------------------------------------------------------------------
@@ -88,17 +110,7 @@ class LaneDetectionNode(Node):
             self._fx = msg.k[0]  # K = [fx, 0, cx, 0, fy, cy, 0, 0, 1]
             self.get_logger().info(f'camera_info recibido: fx={self._fx:.2f} px')
 
-    def _watchdog_timer(self):
-        now = self.get_clock().now().nanoseconds / 1e9
-        idle = now - self._last_image_time
-        if idle > 3.0:
-            self.get_logger().warn(
-                f'No images received for {idle:.1f}s — '
-                f'check carla_ros_bridge and CARLA server'
-            )
-
     def _on_image(self, msg: Image):
-        self._last_image_time = self.get_clock().now().nanoseconds / 1e9
         self.get_logger().debug('Received image')
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -106,7 +118,7 @@ class LaneDetectionNode(Node):
             self.get_logger().debug(f'Frame: {w}x{h}')
 
             left, right = self._detector._detect(frame, h, w)
-            lane_state  = self._detector._analyze(w, left, right, fps=0.0)
+            lane_state  = self._detector._analyze(w, left, right)
 
             lateral_error_px = float(lane_state.offset_px)
 
@@ -138,19 +150,8 @@ class LaneDetectionNode(Node):
             self.state_pub.publish(state_msg)
             self.get_logger().debug(f'Published lane_state: {state_msg.data}')
 
-            now = self.get_clock().now().nanoseconds / 1e9
-            if now - self._last_status_time >= 2.0:
-                self._last_status_time = now
-                fx_str = f'{self._fx:.1f}' if self._fx else 'N/A'
-                self.get_logger().info(
-                    f'Lane error: {lateral_error_px:+.1f}px → {lateral_error_m:+.4f}m  '
-                    f'(fx={fx_str})  '
-                    f'L:{int(lane_state.left_detected)} R:{int(lane_state.right_detected)}  '
-                    f'zona={lane_state.zone}'
-                )
         except Exception as e:
             self.get_logger().error(f'Error in _on_image: {e}')
-
 
 
 def main(args=None):
