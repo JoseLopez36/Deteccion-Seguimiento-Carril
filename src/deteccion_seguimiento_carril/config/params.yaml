@@ -1,13 +1,22 @@
 vehicle_control_node:
   ros__parameters:
     control_rate: 20.0          # Hz
-    target_speed: 5.0           # m/s (~18 km/h)
     max_steer: 1.0              # normalizado CARLA [-1, 1]
-    kp_steering: 0.3            # P sobre error lateral en metros
-    ki_steering: 0.001          # I sobre error lateral en metros
-    kd_steering: -1.07e-05      # D sobre derivada del error lateral en metros
     kp_throttle: 0.3            # P sobre error de velocidad
     ki_throttle: 0.05           # I sobre error de velocidad
+
+    # Parámetros de control (18 km/h)
+    # target_speed: 5.0           # m/s (18 km/h)
+    # kp_steering: 0.3            # P sobre error lateral en metros
+    # ki_steering: 0.001          # I sobre error lateral en metros
+    # kd_steering: -1.07e-05      # D sobre derivada del error lateral en metros
+
+    # Parámetros de control (30 km/h)
+    target_speed: 8.33          # m/s (30 km/h)
+    kp_steering: 0.22           # P sobre error lateral en metros
+    ki_steering: 0.001          # I sobre error lateral en metros
+    kd_steering: -4.0e-05       # D sobre derivada del error lateral en metros
+
     lane_error_topic: /lane_detection/lane_error
     speedometer_topic: /carla/ego_vehicle/speedometer
     vehicle_control_topic: /carla/ego_vehicle/vehicle_control_cmd
@@ -24,9 +33,9 @@ lane_detection_node:
     hough_threshold:  50
     hough_min_len:    40
     hough_max_gap:    100
-    min_slope:        0.4
+    min_slope:        0.6
     smoothing:        8
-    horizon:          0.58
+    horizon:          0.5
     center_threshold: 0.20
 
 annotation_generator_node:
