@@ -165,6 +165,20 @@ docker compose -f tools/docker-compose-lane-dataset.yaml up
 
 - **Salida**: `dataset/lanes/images/` (RGB) y `dataset/lanes/masks/` (máscaras binarias)
 
+### Vídeo demo del detector
+
+Genera un `.mp4` aplicando el detector de carriles sobre las imágenes del dataset:
+
+```bash
+python3 tools/make_lane_video.py dataset/lanes/images
+```
+
+Salida por defecto: `dataset/lanes/lane_demo.mp4`. Opciones:
+
+```bash
+python3 tools/make_lane_video.py dataset/lanes/images -o output/demo.mp4 --fps 15
+```
+
 ### Visualización del dataset
 
 ```bash
