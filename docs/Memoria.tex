@@ -22,7 +22,7 @@
 
 \hypersetup{
     colorlinks=true,
-    linkcolor=blue!60!black,
+    linkcolor=black!60!black,
     urlcolor=blue!60!black,
     citecolor=green!50!black,
     pdftitle={Lane Keeping Control: Detección de Carriles y Seguimiento de Carril},
@@ -70,7 +70,7 @@
     \vspace{1cm}
     \begin{tabular}{l}
         Agustín Mayor \\[4pt]
-        Rafael Muñoz \\[4pt]
+        Rafael Muñoz  \\[4pt]
         José Francisco López
     \end{tabular}
     \vfill
@@ -81,7 +81,7 @@
 \newpage
 
 \begin{abstract}
-Este trabajo presenta el diseño e implementación de un sistema de \textit{Lane Keeping Assist} (LKA) para un vehículo autónomo simulado en \textit{CARLA Simulator} e integrado con \textit{ROS2 Humble} mediante contenedores Docker. El sistema consta de tres bloques principales: detección de líneas de carril mediante visión clásica con OpenCV y la transformada de Hough, diseño y sintonización de un controlador PID para mantener el vehículo centrado en el carril, y la integración de ambos módulos en un entorno de simulación realista donde se valida el funcionamiento completo. El código fuente, datasets e imágenes y vídeos demostrativos están disponibles en el repositorio público de GitHub: \url{https://github.com/JoseLopez36/Deteccion-Seguimiento-Carril}.
+    Este trabajo presenta el diseño e implementación de un sistema de \textit{Lane Keeping Assist} (LKA) para un vehículo autónomo simulado en \textit{CARLA Simulator} e integrado con \textit{ROS2 Humble} mediante contenedores Docker. El sistema consta de tres bloques principales: detección de líneas de carril mediante visión clásica con OpenCV y la transformada de Hough, diseño y sintonización de un controlador PID para mantener el vehículo centrado en el carril, y la integración de ambos módulos en un entorno de simulación realista donde se valida el funcionamiento completo. El código fuente, datasets e imágenes y vídeos demostrativos están disponibles en el repositorio público de GitHub: \url{https://github.com/JoseLopez36/Deteccion-Seguimiento-Carril}.
 \end{abstract}
 
 \newpage
@@ -113,11 +113,11 @@ La memoria se organiza en tres bloques principales:
 
 \begin{description}
     \item[Sección \ref{sec:carriles}: Detección de carriles.]
-    Describe el pipeline de visión artificial empleado para detectar las marcas viales y calcular el error lateral del vehículo.
+          Describe el pipeline de visión artificial empleado para detectar las marcas viales y calcular el error lateral del vehículo.
     \item[Sección \ref{sec:control}: Control de mantenimiento de carril.]
-    Explica el modelado del vehículo y la sintonización del controlador PID en MATLAB/Simulink.
+          Explica el modelado del vehículo y la sintonización del controlador PID en MATLAB/Simulink.
     \item[Sección \ref{sec:integracion}: Integración en simulación y resultados.]
-    Desarrolla la arquitectura software completa en CARLA/ROS2, la infraestructura Docker, los nodos implementados y los resultados obtenidos.
+          Desarrolla la arquitectura software completa en CARLA/ROS2, la infraestructura Docker, los nodos implementados y los resultados obtenidos.
 \end{description}
 
 % ═════════════════════════════════════════════════════════════════════════════
@@ -132,7 +132,81 @@ La memoria se organiza en tres bloques principales:
 \label{sec:control}
 % ═════════════════════════════════════════════════════════════════════════════
 
-% TODO
+Esta sección describe el modelado del vehículo y el proceso de diseño y sintonización del controlador PID de dirección empleado para el mantenimiento de carril. El flujo de diseño sigue la metodología clásica de control: primero se establece un modelo dinámico del sistema, después se sintoniza el controlador en MATLAB/Simulink y, finalmente, los parámetros obtenidos se transfieren directamente a la implementación en Python/ROS2 descrita en la Sección~\ref{sec:integracion}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{Modelado del vehículo}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Para el diseño del controlador de dirección se adopta un modelo cinemático de vehículo tipo bicicleta (\textit{bicycle model}), ampliamente utilizado en aplicaciones de control lateral por su equilibrio entre fidelidad y manejabilidad analítica. En este modelo el vehículo queda descrito por su posición lateral $y$, su ángulo de guiñada $\psi$ y el ángulo de dirección de las ruedas delanteras $\delta$.
+
+El error de seguimiento de carril se define como el desplazamiento lateral del punto central del eje delantero respecto al centro del carril, calculado a partir de la imagen de la cámara frontal tal como se describe en la Sección~\ref{sec:carriles}. Este error, expresado en metros, es la señal de referencia del bucle de control de dirección.
+
+El modelo del vehículo simulado en MATLAB/Simulink toma como referencia los parámetros dinámicos del vehículo disponible en el entorno de simulación, siguiendo el mismo esquema que el ego-vehicle empleado en CARLA (Tesla Model 3). Los parámetros relevantes del modelo son la distancia entre ejes (\textit{wheelbase}) $L$ y la velocidad de avance $v$, que se trata como perturbación paramétrica durante la sintonización dado que el controlador de crucero la regula de forma independiente (véase la Sección~\ref{sec:integracion}).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{Estructura de control en cascada}
+% ─────────────────────────────────────────────────────────────────────────────
+
+El sistema de control se organiza en dos lazos independientes que operan en cascada:
+
+\begin{enumerate}
+    \item \textbf{Lazo externo — control de velocidad (PI):} regula la velocidad longitudinal del vehículo en torno a la referencia deseada $v_\text{ref}$, actuando sobre el acelerador y el freno.
+    \item \textbf{Lazo interno — control de dirección (PID):} emplea el error lateral $e_s$ proporcionado por el módulo de detección de carriles para calcular el ángulo de volante corrector y mantener el vehículo centrado en el carril.
+\end{enumerate}
+
+Esta arquitectura en cascada permite diseñar y sintonizar cada lazo de forma independiente, aprovechando la separación de escalas temporales entre la dinámica longitudinal (lenta) y la lateral (más rápida).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{Sintonización en MATLAB/Simulink}
+% ─────────────────────────────────────────────────────────────────────────────
+
+El proceso de sintonización se realiza íntegramente en MATLAB/Simulink antes de trasladar los parámetros al entorno ROS2/CARLA. El diagrama de bloques del modelo incluye: el generador de error lateral de referencia, el bloque PID de dirección, el modelo cinemático del vehículo y el bloque de realimentación que cierra el lazo.
+
+Para evaluar la respuesta del controlador se inyecta un error lateral artificial en el punto de entrada del PID. Esta estrategia permite explorar la respuesta transitoria del sistema ante perturbaciones de posición sin necesidad de una trayectoria de referencia compleja, facilitando el ajuste iterativo de las ganancias.
+
+Las ganancias se sintonizaron siguiendo un proceso manual asistido por la herramienta \texttt{pidTuner} de MATLAB, imponiendo los siguientes criterios de diseño:
+
+\begin{itemize}
+    \item Tiempo de establecimiento reducido: el vehículo debe recuperar el centro del carril en el menor número de muestras posible.
+    \item Sobreoscilación acotada: se tolera una sobreoscilación pequeña para no sacrificar velocidad de respuesta.
+    \item Error estacionario nulo: el término integral elimina cualquier desviación permanente debida a perturbaciones constantes (p.~ej., peralte de la calzada).
+    \item Rechazo de oscilaciones: el término derivativo amortigua las oscilaciones producidas por la dinámica lateral del vehículo.
+\end{itemize}
+
+La Figura~\ref{fig:simulink_respuesta} muestra la respuesta del sistema ante un error lateral artificial obtenida en Simulink. El error converge al valor final de $-0{,}006$~m, con oscilaciones amortiguadas y sin sobreoscilación excesiva, lo que valida la sintonización antes de pasar al entorno real de simulación.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Simulink_Respuesta.png}
+    \caption{Respuesta del sistema de control de dirección ante un error lateral artificial simulado en MATLAB/Simulink. Error final: $-0{,}006$~m. Se aprecia la convergencia al centro del carril con oscilaciones amortiguadas.}
+    \label{fig:simulink_respuesta}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{Parámetros del controlador}
+% ─────────────────────────────────────────────────────────────────────────────
+
+La Tabla~\ref{tab:pid} recoge los parámetros definitivos de ambos PIDs resultantes del proceso de sintonización. Estos valores se configuran directamente en el fichero \texttt{params.yaml} del paquete ROS2 y se cargan en tiempo de ejecución por el nodo \texttt{vehicle\_control\_node}.
+
+\begin{table}[H]
+    \centering
+    \caption{Parámetros del controlador PID del sistema.}
+    \label{tab:pid}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Controlador} & \textbf{Variable controlada} & $K_p$                   & $K_i$                   & $K_d$                   \\
+        \midrule
+        PID de dirección     & Error lateral (m)            & $2{,}00 \times 10^{-3}$ & $1{,}00 \times 10^{-3}$ & $1{,}07 \times 10^{-5}$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{Transferibilidad de las ganancias}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Una de las hipótesis de partida del trabajo es que las ganancias sintonizadas en MATLAB/Simulink son directamente transferibles a la implementación en Python/ROS2 sin necesidad de reajuste. Esta hipótesis se verifica experimentalmente en la Sección~\ref{sec:integracion}: el sistema opera correctamente a las velocidades de 18~km/h y 30~km/h con los mismos valores de $K_p$, $K_i$ y $K_d$ obtenidos en simulación, lo que confirma la validez del modelo utilizado para la sintonización y la coherencia entre el entorno MATLAB/Simulink y el simulador CARLA.
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Integración en simulación y resultados}
@@ -153,12 +227,12 @@ El simulador se ejecuta en su versión \textit{0.9.15} dentro de un contenedor D
     \item Mapa: Town04, escenario de carretera inter-urbana con marcas viales bien definidas.
     \item Vehículo (\textit{ego-vehicle}): modelo basado en el Tesla Model 3, controlado en lazo cerrado desde ROS2.
     \item Sensores disponibles:
-    \begin{itemize}
-        \item Cámara RGB frontal (\texttt{rgb\_front}): imagen principal usada para la detección de carriles.
-        \item Cámara de segmentación semántica (\texttt{semantic\_segmentation\_front}): proporciona la máscara de \textit{ground truth} utilizada en la generación del dataset sintético.
-        \item Medidor de velocidad (\texttt{speedometer}): velocidad actual del vehículo en m/s.
-        \item Cámara exterior (\texttt{rgb\_view}): vista en tercera persona para supervisión visual.
-    \end{itemize}
+          \begin{itemize}
+              \item Cámara RGB frontal (\texttt{rgb\_front}): imagen principal usada para la detección de carriles.
+              \item Cámara de segmentación semántica (\texttt{semantic\_segmentation\_front}): proporciona la máscara de \textit{ground truth} utilizada en la generación del dataset sintético.
+              \item Medidor de velocidad (\texttt{speedometer}): velocidad actual del vehículo en m/s.
+              \item Cámara exterior (\texttt{rgb\_view}): vista en tercera persona para supervisión visual.
+          \end{itemize}
 \end{itemize}
 
 La Figura~\ref{fig:vistas_carla} muestra las dos perspectivas principales empleadas durante las sesiones de conducción autónoma.
@@ -220,11 +294,11 @@ La siguiente tabla describe cada uno de los servicios:
     \label{tab:servicios_docker}
     \begin{tabular}{lll}
         \toprule
-        \textbf{Servicio} & \textbf{Contenedor} & \textbf{Función} \\
+        \textbf{Servicio}    & \textbf{Contenedor}                     & \textbf{Función}                      \\
         \midrule
-        \texttt{ros\_bridge}  & \texttt{carla\_ros\_bridge}             & Bridge CARLA$\to$ROS2 \\
-        \texttt{navegacion}   & \texttt{deteccion\_seguimiento\_carril} & Lanzamiento del paquete de ROS2 \\
-        \texttt{foxglove}     & \texttt{foxglove\_bridge}               & WebSocket bridge para Foxglove Studio \\
+        \texttt{ros\_bridge} & \texttt{carla\_ros\_bridge}             & Bridge CARLA$\to$ROS2                 \\
+        \texttt{navegacion}  & \texttt{deteccion\_seguimiento\_carril} & Lanzamiento del paquete de ROS2       \\
+        \texttt{foxglove}    & \texttt{foxglove\_bridge}               & WebSocket bridge para Foxglove Studio \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -255,9 +329,9 @@ Este nodo cierra el lazo de control: recibe el error lateral y la velocidad actu
 Regula la velocidad del vehículo en torno a la referencia configurable \texttt{target\_speed}. El error de control es la diferencia entre la velocidad objetivo y la medida por el velocímetro. La salida del PID se mapea a los canales \textit{throttle} (acelerador) y \textit{brake} (freno) normalizados en $[0, 1]$:
 
 \begin{align}
-    e_v(t) &= v_{\text{ref}} - v_{\text{actual}} \notag \\
-    u_v(t) &= K_{p,v}\,e_v + K_{i,v}\int e_v\,\mathrm{d}t \notag \\
-    \text{throttle} &= \max(0,\,\min(1,\, u_v)), \quad
+    e_v(t)          & = v_{\text{ref}} - v_{\text{actual}} \notag          \\
+    u_v(t)          & = K_{p,v}\,e_v + K_{i,v}\int e_v\,\mathrm{d}t \notag \\
+    \text{throttle} & = \max(0,\,\min(1,\, u_v)), \quad
     \text{brake} = \max(0,\,\min(1,\,-u_v)) \notag
 \end{align}
 
@@ -265,8 +339,8 @@ Regula la velocidad del vehículo en torno a la referencia configurable \texttt{
 Ajusta el ángulo del volante para mantener el vehículo centrado en el carril. El PID opera en radianes y su salida se normaliza por el ángulo físico máximo del volante ($\theta_{\max} = 0.6~\text{rad} \approx 34^\circ$) para obtener el valor de dirección normalizado de CARLA en $[-1,1]$. La convención de signo es: error positivo (vehículo desplazado a la derecha) produce una corrección hacia la izquierda (steer~$< 0$):
 
 \begin{align}
-    u_s(t) &= K_{p,s}\,e_s + K_{i,s}\int e_s\,\mathrm{d}t + K_{d,s}\,\dot{e}_s \notag \\
-    \text{steer} &= \max\!\left(-1,\,\min\!\left(1,\,\frac{u_s}{\theta_{\max}}\right)\right) \notag
+    u_s(t)       & = K_{p,s}\,e_s + K_{i,s}\int e_s\,\mathrm{d}t + K_{d,s}\,\dot{e}_s \notag         \\
+    \text{steer} & = \max\!\left(-1,\,\min\!\left(1,\,\frac{u_s}{\theta_{\max}}\right)\right) \notag
 \end{align}
 
 Ambos PIDs incorporan \textit{anti-windup} que limita el término integral al rango $[-10, 10]$. Los parámetros definitivos configurados en \texttt{params.yaml} se recogen en la Tabla~\ref{tab:pid}. Estos valores son el resultado de la sintonización en MATLAB/Simulink descrita en la Sección~\ref{sec:control}, trasladados directamente a la implementación en Python.
