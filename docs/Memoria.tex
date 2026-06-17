@@ -125,7 +125,68 @@ La memoria se organiza en tres bloques principales:
 \label{sec:carriles}
 % ═════════════════════════════════════════════════════════════════════════════
 
-% TODO
+La detección de carriles constituye la capa de percepción del sistema LKA, encargada de transformar cada \textit{frame} de la cámara frontal en una estimación numérica de la posición lateral del vehículo dentro de su carril. El módulo se ha implementado mediante técnicas de visión clásica con OpenCV, evitando el uso de redes neuronales para mantener un pipeline ligero, interpretable y ejecutable en tiempo real sin necesidad de GPU dedicada ni de un dataset de entrenamiento.
+
+\subsection{Pipeline de procesamiento de imagen}
+
+El detector recibe la imagen RGB de la cámara frontal y aplica una secuencia de etapas clásicas de visión artificial para aislar las marcas viales y ajustar una línea representativa a cada lado del carril:
+
+\begin{enumerate}
+	\item \textbf{Realce de color.} La imagen se convierte al espacio de color HLS(\textit{Hue-Lightness-Saturation}), en el que se aplican dos umbralizaciones independientes: una para marcas blancas (alta luminosidad) y otra para marcas amarillas (rango de tono específico). La unión de ambas máscaras aísla los píxeles candidatos a pertenecer a una línea de carril, independientemente de su color. Trabajar en HLS hace que la detección sea mucho más estable.
+	\item \textbf{Conversión a escala de grises y suavizado.} La imagen se convierte a escala de grises y se enmascara con el resultado del paso anterior, de forma que únicamente los píxeles de marca vial conservan información. A continuación se aplica un filtro \textit{Gaussian Blur} para atenuar el ruido de alta frecuencia (como imperfecciones en el asfalto) antes de la detección de bordes.
+	\item \textbf{Detección de bordes (Canny).} Se aplica el detector de bordes de Canny sobre la imagen suavizada, con umbrales bajo y alto configurables (\texttt{canny\_low}, \texttt{canny\_high}), obteniendo un mapa binario de contornos.
+	\item \textbf{Región de interés (ROI).} Se enmascara la imagen de bordes con un polígono trapezoidal que delimita la zona de carretera frente al vehículo, descartando el cielo, los laterales y otros elementos de la escena ajenos al carril. La altura del horizonte del trapecio es configurable mediante el parámetro \texttt{horizon}.
+	\item \textbf{Transformada de Hough probabilística.} Sobre los bordes filtrados por el ROI se ejecuta \texttt{cv2.HoughLinesP}, que detecta segmentos de recta caracterizados por su resolución angular y de distancia, el número mínimo de votos (\texttt{hough\_threshold}), la longitud mínima de segmento (\texttt{hough\_min\_len}) y el hueco máximo tolerado dentro de un mismo segmento (\texttt{hough\_max\_gap}).
+	\item \textbf{Clasificación y ajuste por lado.} Cada segmento detectado se clasifica como perteneciente a la línea izquierda o derecha del carril según el signo de su pendiente, descartando previamente los segmentos casi horizontales mediante el umbral \texttt{min\_slope}. Los puntos de cada lado se ajustan mediante una regresión lineal (\texttt{numpy.polyfit}) que produce una única recta representativa por lado, extrapolada entre la base de la imagen y la altura del horizonte definida por el ROI.
+	\item \textbf{Suavizado temporal.} Las coordenadas de cada línea se promedian con las de los últimos \texttt{smoothing} \textit{frames} mediante una cola de tipo FIFO, lo que reduce el parpadeo de la detección frame a frame y aporta estabilidad ante oclusiones puntuales o segmentos de Hough erróneos.
+\end{enumerate}
+
+Todos los parámetros del pipeline se agrupan en una estructura de configuración (\texttt{LaneConfig}), lo que permite ajustar el comportamiento del detector --umbrales de Canny, parámetros de Hough, pendiente mínima, ventana de suavizado y altura del horizonte-- sin modificar el código, cargándolos como parámetros ROS2 en tiempo de ejecución.
+
+\subsection{Cálculo de la posición lateral}
+
+A partir de las líneas izquierda y derecha ajustadas, el detector estima la posición lateral del vehículo dentro del carril evaluando ambas rectas en la fila inferior de la imagen (la más cercana al vehículo). Se distinguen tres casos:
+
+\begin{itemize}
+	\item \textbf{Ambas líneas detectadas.} Se calcula el centro del carril como el punto medio entre las coordenadas $x$ de ambas líneas en la base de la imagen, y la anchura del carril como su diferencia. El desplazamiento lateral en píxeles (\texttt{offset\_px}) se obtiene como la diferencia entre el centro geométrico de la imagen y el centro del carril. Adicionalmente se define una magnitud normalizada \texttt{lateral} $\in [0, 1]$, que representa la posición relativa del centro de la imagen respecto a las dos líneas (0 sobre la línea izquierda, 0.5 en el centro exacto del carril, 1 sobre la línea derecha).
+	\item \textbf{Solo una línea detectada.} Si únicamente se detecta uno de los dos lados --situación habitual en curvas pronunciadas o marcas viales discontinuas--, el desplazamiento lateral se aproxima respecto a la línea visible, asumiendo que el vehículo se aleja de ella en la dirección del lado no detectado.
+	\item \textbf{Ninguna línea detectada.} El estado se marca como \texttt{UNKNOWN} y no se actualiza el error lateral, manteniéndose el último valor válido hasta la recuperación de la detección.
+\end{itemize}
+
+A partir del valor normalizado \texttt{lateral} se clasifica la posición del vehículo en una de tres zonas discretas, en función de un umbral de centrado configurable (\texttt{center\_threshold}, fijado en 0.20): \texttt{LEFT} si el vehículo está desplazado hacia la línea izquierda más allá del umbral, \texttt{RIGHT} si lo está hacia la derecha, y \texttt{CENTER} en caso contrario. Esta clasificación por zonas, sumada al valor continuo de \texttt{offset\_px}, permite tanto generar alertas discretas de cruce o cambio de carril como alimentar un controlador continuo de mantenimiento de carril.
+
+\subsection{Conversión a unidades métricas}
+
+El error lateral calculado por el pipeline de visión se expresa inicialmente en píxeles, una unidad dependiente de la resolución y la óptica de la cámara. Para emplear dicho error como señal de referencia de un controlador físico es necesario expresarlo en metros, unidad utilizada en el modelo cinemático del vehículo (Sección~\ref{sec:control}).
+
+La conversión se realiza a partir de la longitud focal $f_x$ de la cámara, obtenida del mensaje \texttt{camera\_info} publicado por el simulador (elemento $K_{00}$ de la matriz intrínseca). El error lateral en metros se aproxima como:
+
+\begin{equation}
+	e_{\text{lateral}}~\text{[m]} = \frac{\texttt{offset\_px}}{f_x}
+\end{equation}
+
+Esta aproximación asume una proyección de perspectiva simple y es válida bajo la hipótesis de que el plano de la carretera es aproximadamente perpendicular al eje óptico en la región de interés cercana al vehículo. Hasta que el nodo de detección recibe el primer mensaje de \texttt{camera\_info}, el error se publica directamente en píxeles como valor de respaldo.
+
+\subsection{Salida del módulo de detección}
+
+El detector expone su resultado mediante una estructura de estado (\texttt{LaneState}) que recoge, para cada \textit{frame} procesado: la zona de posición (\texttt{CENTER}/\texttt{LEFT}/\texttt{RIGHT}/\texttt{UNKNOWN}), el valor normalizado \texttt{lateral}, el desplazamiento \texttt{offset\_px}, la anchura estimada del carril en píxeles y los indicadores booleanos de detección de cada línea. Esta estructura constituye la interfaz entre el módulo de percepción y el resto del sistema, y es la que consume el nodo \texttt{lane\_detection\_node} (Sección~\ref{sec:integracion}) para publicar el error lateral y el estado del carril como mensajes ROS2.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{Pruebas previas sobre vídeo real}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Antes de integrar el detector en el simulador CARLA, el pipeline descrito en las secciones anteriores se validó de forma independiente sobre vídeo real de carretera, ejecutando el módulo de detección como aplicación \textit{standalone} en Python sobre secuencias grabadas desde un vehículo. Esta etapa de prueba permitió ajustar los parámetros del pipeline --umbrales de Canny, ventana de suavizado y altura del horizonte del ROI-- en un escenario con condiciones de iluminación e infraestructura viaria distintas a las del entorno sintético de CARLA, antes de invertir tiempo en la integración con ROS2 y el simulador.
+
+La Figura~\ref{fig:prueba_video} muestra un fotograma representativo de estas pruebas, en el que se observa el polígono de carril superpuesto en verde semitransparente, las líneas izquierda (azul) y derecha (amarilla) ajustadas mediante regresión lineal, y el panel de telemetría con la zona de posición, el valor normalizado \texttt{lateral} y el desplazamiento en píxeles. 
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.70\textwidth]{Prueba_Video_Previa.png}
+	\caption{Fotograma de las pruebas previas del detector de carriles sobre vídeo real de carretera, mostrando el polígono de carril, las líneas ajustadas y el panel de telemetría con la zona de posición (\texttt{LEFT}) y el desplazamiento lateral.}
+	\label{fig:prueba_video}
+\end{figure}
+
+Los resultados obtenidos sobre vídeo real confirmaron la viabilidad del pipeline de visión clásica antes de su traslado al entorno simulado, validando en particular la robustez del ajuste por regresión lineal y del suavizado temporal frente al ruido visual propio de una escena no controlada (variaciones de iluminación, vegetación lateral y marcas viales parcialmente desgastadas).
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Control de mantenimiento de carril}
@@ -137,6 +198,7 @@ Esta sección describe el modelado del vehículo y el proceso de diseño y sinto
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection{Modelado del vehículo}
 % ─────────────────────────────────────────────────────────────────────────────
+
 
 Para el diseño del controlador de dirección se adopta un modelo cinemático de vehículo tipo bicicleta (\textit{bicycle model}), ampliamente utilizado en aplicaciones de control lateral por su equilibrio entre fidelidad y manejabilidad analítica. En este modelo el vehículo queda descrito por su posición lateral $y$, su ángulo de guiñada $\psi$ y el ángulo de dirección de las ruedas delanteras $\delta$.
 
