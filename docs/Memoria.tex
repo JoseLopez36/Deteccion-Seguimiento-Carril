@@ -132,7 +132,7 @@ La detección de carriles constituye la capa de percepción del sistema LKA, enc
 El detector recibe la imagen RGB de la cámara frontal y aplica una secuencia de etapas clásicas de visión artificial para aislar las marcas viales y ajustar una línea representativa a cada lado del carril:
 
 \begin{enumerate}
-	\item \textbf{Realce de color.} La imagen se convierte al espacio de color HLS(\textit{Hue-Lightness-Saturation}), en el que se aplican dos umbralizaciones independientes: una para marcas blancas (alta luminosidad) y otra para marcas amarillas (rango de tono específico). La unión de ambas máscaras aísla los píxeles candidatos a pertenecer a una línea de carril, independientemente de su color. Trabajar en HLS hace que la detección sea mucho más estable.
+	\item \textbf{Realce de color.} La imagen se convierte al espacio de color HLS (\textit{Hue-Lightness-Saturation}), en el que se aplican dos umbralizaciones independientes: una para marcas blancas (alta luminosidad) y otra para marcas amarillas (rango de tono específico). La unión de ambas máscaras aísla los píxeles candidatos a pertenecer a una línea de carril, independientemente de su color. Trabajar en HLS hace que la detección sea mucho más estable.
 	\item \textbf{Conversión a escala de grises y suavizado.} La imagen se convierte a escala de grises y se enmascara con el resultado del paso anterior, de forma que únicamente los píxeles de marca vial conservan información. A continuación se aplica un filtro \textit{Gaussian Blur} para atenuar el ruido de alta frecuencia (como imperfecciones en el asfalto) antes de la detección de bordes.
 	\item \textbf{Detección de bordes (Canny).} Se aplica el detector de bordes de Canny sobre la imagen suavizada, con umbrales bajo y alto configurables (\texttt{canny\_low}, \texttt{canny\_high}), obteniendo un mapa binario de contornos.
 	\item \textbf{Región de interés (ROI).} Se enmascara la imagen de bordes con un polígono trapezoidal que delimita la zona de carretera frente al vehículo, descartando el cielo, los laterales y otros elementos de la escena ajenos al carril. La altura del horizonte del trapecio es configurable mediante el parámetro \texttt{horizon}.
@@ -353,6 +353,7 @@ La siguiente tabla describe cada uno de los servicios:
 
 \begin{table}[H]
     \centering
+    \caption{Servicios Docker que componen el sistema.}
     \label{tab:servicios_docker}
     \begin{tabular}{lll}
         \toprule
@@ -377,7 +378,7 @@ El paquete \texttt{deteccion\_seguimiento\_carril} implementa tres nodos ROS2 en
 
 \subsubsection{Nodo de detección de carriles (\texttt{lane\_detection\_node})}
 
-Este nodo recibe cada \textit{frame} de de la cámara frontal y ejecuta el pipeline de visión clásica descrito en la Sección~\ref{sec:carriles}. A partir de las líneas detectadas calcula el error lateral del vehículo respecto al centro del carril: primero en píxeles (\texttt{offset\_px}) y luego en metros, dividiendo por la longitud focal $f_x$ extraída del mensaje \texttt{camera\_info}. Los resultados se publican en:
+Este nodo recibe cada \textit{frame} de la cámara frontal y ejecuta el pipeline de visión clásica descrito en la Sección~\ref{sec:carriles}. A partir de las líneas detectadas calcula el error lateral del vehículo respecto al centro del carril: primero en píxeles (\texttt{offset\_px}) y luego en metros, dividiendo por la longitud focal $f_x$ extraída del mensaje \texttt{camera\_info}. Los resultados se publican en:
 \begin{itemize}
     \item \texttt{/lane\_detection/lane\_error} (\texttt{std\_msgs/Float32}): error lateral en metros.
     \item \texttt{/lane\_detection/lane\_state} (\texttt{std\_msgs/String}): JSON con las coordenadas de las líneas izquierda y derecha, la zona de posición (\texttt{CENTER}/\texttt{LEFT}/\texttt{RIGHT}) y los flags de detección.
@@ -469,6 +470,12 @@ Los ficheros correspondientes son \texttt{media/Demo\_18\_kmh.mp4}, \texttt{medi
 
 Este trabajo ha permitido implementar un sistema de \textit{Lane Keeping Assist} funcional de extremo a extremo, demostrando que la combinación de técnicas de visión clásica con un controlador PID en cascada y una arquitectura ROS2 modular constituye una solución eficaz y fácilmente reproducible para la conducción autónoma en simulación.
 
-% TODO
+A lo largo del desarrollo se han cumplido los tres objetivos planteados al inicio. En primer lugar, el módulo de percepción detecta de forma robusta las marcas viales y estima la posición lateral del vehículo a partir de un pipeline ligero basado en OpenCV, sin recurrir a redes neuronales ni a aceleración por GPU. Este enfoque, validado previamente sobre vídeo real de carretera, demostró ser suficientemente fiable para alimentar el lazo de control. En segundo lugar, el controlador PID de dirección, sintonizado en MATLAB/Simulink sobre un modelo cinemático tipo bicicleta, proporciona una respuesta estable y con error estacionario nulo ante perturbaciones de posición. Por último, la integración de ambos módulos en CARLA mediante ROS2 y contenedores Docker ha dado lugar a un sistema completo capaz de conducir el vehículo de forma autónoma manteniéndolo centrado en su carril.
+
+Un resultado especialmente relevante es la confirmación experimental de que las ganancias obtenidas en simulación con MATLAB/Simulink son directamente transferibles al entorno CARLA/ROS2: el sistema opera correctamente a 18~km/h y 30~km/h sin necesidad de reajustar los parámetros, lo que valida tanto el modelo empleado en la sintonización como la coherencia entre ambos entornos. La estructura de control en cascada, que desacopla la dinámica longitudinal de la lateral, y el diseño modular del software han resultado clave para abordar el problema de forma incremental y para facilitar la depuración de cada bloque por separado.
+
+El trabajo presenta, no obstante, algunas limitaciones que abren líneas de mejora futuras. El detector basado en visión clásica es sensible a condiciones de iluminación adversas, marcas viales muy desgastadas o curvas de radio reducido, situaciones en las que un detector basado en aprendizaje profundo --entrenado, por ejemplo, con el dataset sintético generado en este trabajo-- podría aportar mayor robustez. Asimismo, el modelo cinemático empleado para la sintonización ignora los efectos dinámicos que aparecen a velocidades elevadas, por lo que un modelo dinámico permitiría extender el rango de operación del vehículo. Finalmente, la validación se ha realizado únicamente en simulación; el siguiente paso natural sería trasladar el sistema a una plataforma física para evaluar su comportamiento en condiciones reales.
+
+En conjunto, el proyecto demuestra que es posible construir un sistema de mantenimiento de carril completo y reproducible combinando herramientas de código abierto, y sienta una base sólida sobre la que incorporar técnicas de percepción y control más avanzadas.
 
 \end{document}
